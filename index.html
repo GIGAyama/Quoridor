@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>コリドール</title>
+  <!-- おしゃれなフォントを読み込みます -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap" rel="stylesheet">
+  <!-- CSSファイルを統合 -->
+  <style>
+    :root {
+      --font-family: 'M PLUS Rounded 1c', sans-serif;
+      --bg-color: #fdf6e3; /* やさしいクリーム色 */
+      --container-bg: #ffffff;
+      --board-bg: #a1887f; /* すこし明るい木の色 */
+      --cell-bg: #d7ccc8;
+      --pawn1-color: #ff8a65; /* あざやかなオレンジ */
+      --pawn2-color: #4fc3f7; /* あざやかなブルー */
+      --wall-color: #795548; /* こい木の色 */
+      --highlight-color: rgba(129, 199, 132, 0.7); /* やさしい緑 */
+      --text-color: #5d4037;
+      --shadow-color: rgba(0, 0, 0, 0.1);
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-color);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text-color);
+    }
+
+    #game-container {
+      background-color: var(--container-bg);
+      padding: 25px 40px;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px var(--shadow-color);
+      text-align: center;
+      max-width: 90vw;
+      max-height: 95vh;
+    }
+
+    /* --- セットアップ画面 --- */
+    #setup-screen h1 {
+      font-size: 3em;
+      color: var(--wall-color);
+      font-weight: 700;
+    }
+    #setup-screen p {
+      font-size: 1.2em;
+      color: var(--text-color);
+      margin-bottom: 30px;
+    }
+    .setup-form select, .setup-form button {
+      font-family: var(--font-family);
+      font-size: 1.1em;
+      padding: 12px 20px;
+      border-radius: 10px;
+      border: 2px solid #eee;
+      margin: 0 10px;
+    }
+    #start-game-btn {
+      background-color: var(--pawn1-color);
+      color: white;
+      cursor: pointer;
+      border-color: var(--pawn1-color);
+      font-weight: 700;
+      transition: transform 0.2s;
+    }
+    #start-game-btn:hover {
+      transform: scale(1.05);
+    }
+
+    /* --- ゲーム画面 --- */
+    #game-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding: 10px 20px;
+      background-color: #fafafa;
+      border-radius: 12px;
+    }
+    .player-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      font-size: 1.1em;
+      transition: all 0.3s ease;
+    }
+    .player-info.current-turn {
+        font-weight: 700;
+        transform: scale(1.05);
+    }
+
+    .pawn-display {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+    }
+    .pawn-display.player1 { background-color: var(--pawn1-color); }
+    .pawn-display.player2 { background-color: var(--pawn2-color); }
+    #message-area {
+      font-weight: 700;
+      font-size: 1.3em;
+      margin: 0 20px; /* 左右に余白を追加 */
+    }
+    .player1-info { color: var(--pawn1-color); }
+    .player2-info { color: var(--pawn2-color); }
+
+    #board-wrapper {
+      display: flex;
+      justify-content: center;
+    }
+    #board {
+      display: grid;
+      position: relative;
+      background-color: var(--board-bg);
+      border: 8px solid var(--board-bg);
+      border-radius: 10px;
+      padding: 5px;
+      gap: 5px;
+    }
+
+    .cell {
+      background-color: var(--cell-bg);
+      border-radius: 3px;
+      position: relative;
+    }
+    .pawn {
+      width: 75%;
+      height: 75%;
+      border-radius: 50%;
+      position: absolute;
+      top: 12.5%;
+      left: 12.5%;
+      box-shadow: inset 0 -3px 5px rgba(0,0,0,0.2);
+      z-index: 10;
+      transition: all 0.3s ease;
+    }
+    .pawn.player1 { background-color: var(--pawn1-color); }
+    .pawn.player2 { background-color: var(--pawn2-color); }
+    
+    .valid-move-highlight {
+      background-color: var(--highlight-color);
+      cursor: pointer;
+      border-radius: 50%;
+      width: 60%;
+      height: 60%;
+      position: absolute;
+      top: 20%;
+      left: 20%;
+      z-index: 5;
+      transition: transform 0.2s;
+    }
+    .valid-move-highlight:hover {
+        transform: scale(1.1);
+    }
+
+    .wall-slot {
+      position: absolute;
+      border-radius: 5px;
+      background-color: rgba(0,0,0,0.1);
+      z-index: 20;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .wall-slot:hover {
+      background-color: var(--highlight-color);
+    }
+
+    .wall {
+      position: absolute;
+      background-color: var(--wall-color);
+      border-radius: 3px;
+      z-index: 15;
+      box-shadow: 0 2px 3px rgba(0,0,0,0.3);
+    }
+
+    #controls {
+      margin-top: 20px;
+    }
+    #controls button {
+      font-family: var(--font-family);
+      padding: 10px 20px;
+      font-size: 1.1em;
+      font-weight: 700;
+      border: none;
+      background-color: #e0e0e0;
+      cursor: pointer;
+      border-radius: 8px;
+      margin: 0 8px;
+      transition: all 0.2s;
+    }
+    #controls button:hover {
+        transform: translateY(-2px);
+    }
+    #controls button.active {
+      background-color: var(--text-color);
+      color: white;
+    }
+    #reset-btn {
+      background-color: #bdbdbd;
+      color: white;
+    }
+
+    /* --- モーダル & ローダー --- */
+    .modal {
+      position: fixed;
+      z-index: 100;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.4);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      animation: fadeIn 0.3s;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .modal-content {
+      background-color: white;
+      padding: 30px 50px;
+      border-radius: 15px;
+      text-align: center;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+    .modal-content h2 {
+        font-size: 1.8em;
+        color: var(--pawn1-color);
+    }
+    .modal-content button {
+      font-family: var(--font-family);
+      background-color: var(--pawn1-color);
+      color: white;
+      cursor: pointer;
+      padding: 12px 25px;
+      border-radius: 10px;
+      border: none;
+      font-size: 1.1em;
+      font-weight: 700;
+      margin-top: 15px;
+      transition: transform 0.2s;
+    }
+    .modal-content button:hover {
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <!-- ゲーム開始前の設定画面 -->
+    <div id="setup-screen">
+      <h1>コリドール</h1>
+      <p>カベをつかって、ゴールをめざせ！</p>
+      <div class="setup-form">
+        <label for="board-size-select">ボードの<ruby>大<rt>おお</rt></ruby>きさを<ruby>選<rt>えら</rt></ruby>んでね</label>
+        <select id="board-size-select">
+          <option value="7">7x7 (かんたん)</option>
+          <option value="9" selected>9x9 (ふつう)</option>
+          <option value="11">11x11 (むずかしい)</option>
+        </select>
+        <button id="start-game-btn">ゲーム<ruby>開始<rt>かいし</rt></ruby></button>
+      </div>
+    </div>
+
+    <!-- メインのゲーム画面 -->
+    <div id="game-screen" style="display: none;">
+      <div id="game-info">
+        <div class="player-info player1-info">
+          <div class="pawn-display player1"></div>
+          <div>
+            <span>プレイヤー１</span>
+            <span id="player1-walls"></span>
+          </div>
+        </div>
+        <div id="message-area"></div>
+        <div class="player-info player2-info">
+          <div class="pawn-display player2"></div>
+          <div>
+            <span>プレイヤー２</span>
+            <span id="player2-walls"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="board-wrapper">
+        <div id="board"></div>
+      </div>
+      
+      <div id="controls">
+        <h3><ruby>操作<rt>そうさ</rt></ruby>モード</h3>
+        <button id="move-mode-btn" class="active">コマを<ruby>動<rt>うご</rt></ruby>かす</button>
+        <button id="wall-mode-btn">カベを<ruby>置<rt>お</rt></ruby>く</button>
+        <button id="reset-btn">リセット</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 勝利メッセージのモーダル -->
+  <div id="winner-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2 id="winner-message"></h2>
+      <button id="play-again-btn">もう<ruby>一回<rt>いっかい</rt></ruby><ruby>遊<rt>あそ</rt></ruby>ぶ</button>
+    </div>
+  </div>
+
+  <!-- JavaScriptを統合 -->
+  <script>
+  //================================================================
+  // 1. グローバル変数とDOM要素の取得
+  //================================================================
+  let gameState = {};
+  let currentMode = 'move';
+  const CELL_SIZE = 50;
+  const GAP_SIZE = 5;
+
+  // DOM要素
+  const setupScreen = document.getElementById('setup-screen');
+  const gameScreen = document.getElementById('game-screen');
+  const boardSizeSelect = document.getElementById('board-size-select');
+  const startGameBtn = document.getElementById('start-game-btn');
+  const boardDiv = document.getElementById('board');
+  const messageArea = document.getElementById('message-area');
+  const moveModeBtn = document.getElementById('move-mode-btn');
+  const wallModeBtn = document.getElementById('wall-mode-btn');
+  const winnerModal = document.getElementById('winner-modal');
+
+  //================================================================
+  // 2. イベントリスナーと初期化
+  //================================================================
+  document.addEventListener('DOMContentLoaded', () => {
+    startGameBtn.addEventListener('click', () => {
+      const boardSize = parseInt(boardSizeSelect.value);
+      initializeGame(boardSize);
+    });
+    
+    moveModeBtn.addEventListener('click', () => setMode('move'));
+    wallModeBtn.addEventListener('click', () => setMode('wall'));
+
+    document.getElementById('reset-btn').addEventListener('click', resetGame);
+    document.getElementById('play-again-btn').addEventListener('click', resetGame);
+  });
+
+  //================================================================
+  // 3. ゲームの描画と更新
+  //================================================================
+  function updateUI() {
+    if (setupScreen.style.display !== 'none') {
+      setupScreen.style.display = 'none';
+      gameScreen.style.display = 'block';
+    }
+    drawBoard();
+    drawPawns();
+    drawWalls();
+    updateGameInfo();
+    highlightPossibleActions();
+
+    if (gameState.winner) {
+      document.getElementById('winner-message').textContent = gameState.message;
+      winnerModal.style.display = 'flex';
+    }
+  }
+
+  function drawBoard() {
+    boardDiv.innerHTML = '';
+    const { boardSize } = gameState;
+    boardDiv.style.gridTemplateColumns = `repeat(${boardSize}, ${CELL_SIZE}px)`;
+    boardDiv.style.gridTemplateRows = `repeat(${boardSize}, ${CELL_SIZE}px)`;
+    const boardTotalSize = boardSize * CELL_SIZE + (boardSize - 1) * GAP_SIZE;
+    boardDiv.style.width = `${boardTotalSize}px`;
+    boardDiv.style.height = `${boardTotalSize}px`;
+
+    for (let r = 0; r < boardSize; r++) {
+      for (let c = 0; c < boardSize; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        cell.addEventListener('click', onCellClick);
+        boardDiv.appendChild(cell);
+      }
+    }
+    createWallSlots();
+  }
+
+  function drawPawns() {
+    Object.keys(gameState.players).forEach(p_id => {
+      const player = gameState.players[p_id];
+      const pawn = document.createElement('div');
+      pawn.className = `pawn player${p_id}`;
+      const cellElement = document.querySelector(`.cell[data-row='${player.row}'][data-col='${player.col}']`);
+      if(cellElement) cellElement.appendChild(pawn);
+    });
+  }
+
+  function drawWalls() {
+    const totalCellAndGap = CELL_SIZE + GAP_SIZE;
+    gameState.walls.forEach(wall => {
+      const wallDiv = document.createElement('div');
+      wallDiv.className = `wall ${wall.orientation}`;
+      if (wall.orientation === 'horizontal') {
+        wallDiv.style.width = `${CELL_SIZE * 2 + GAP_SIZE}px`;
+        wallDiv.style.height = `${GAP_SIZE}px`;
+        wallDiv.style.top = `${(wall.row + 1) * totalCellAndGap - GAP_SIZE}px`;
+        wallDiv.style.left = `${wall.col * totalCellAndGap}px`;
+      } else { // vertical
+        wallDiv.style.width = `${GAP_SIZE}px`;
+        wallDiv.style.height = `${CELL_SIZE * 2 + GAP_SIZE}px`;
+        wallDiv.style.top = `${wall.row * totalCellAndGap}px`;
+        wallDiv.style.left = `${(wall.col + 1) * totalCellAndGap - GAP_SIZE}px`;
+      }
+      boardDiv.appendChild(wallDiv);
+    });
+  }
+
+  function createWallSlots() {
+    const { boardSize } = gameState;
+    const totalCellAndGap = CELL_SIZE + GAP_SIZE;
+    for (let r = 0; r < boardSize - 1; r++) {
+      for (let c = 0; c < boardSize - 1; c++) {
+        // Horizontal slot
+        const slotH = document.createElement('div');
+        slotH.className = 'wall-slot horizontal';
+        slotH.dataset.row = r; slotH.dataset.col = c; slotH.dataset.orientation = 'horizontal';
+        slotH.style.width = `${CELL_SIZE*2+GAP_SIZE}px`;
+        slotH.style.height = `${GAP_SIZE}px`;
+        slotH.style.top = `${(r+1)*totalCellAndGap - GAP_SIZE}px`;
+        slotH.style.left = `${c*totalCellAndGap}px`;
+        slotH.addEventListener('click', onWallSlotClick);
+        boardDiv.appendChild(slotH);
+        
+        // Vertical slot
+        const slotV = document.createElement('div');
+        slotV.className = 'wall-slot vertical';
+        slotV.dataset.row = r; slotV.dataset.col = c; slotV.dataset.orientation = 'vertical';
+        slotV.style.width = `${GAP_SIZE}px`;
+        slotV.style.height = `${CELL_SIZE*2+GAP_SIZE}px`;
+        slotV.style.top = `${r*totalCellAndGap}px`;
+        slotV.style.left = `${(c+1)*totalCellAndGap - GAP_SIZE}px`;
+        slotV.addEventListener('click', onWallSlotClick);
+        boardDiv.appendChild(slotV);
+      }
+    }
+  }
+
+  function updateGameInfo() {
+    messageArea.textContent = gameState.message;
+    document.getElementById('player1-walls').textContent = `のこりカベ: ${gameState.players['1'].walls}`;
+    document.getElementById('player2-walls').textContent = `のこりカベ: ${gameState.players['2'].walls}`;
+    
+    document.querySelector('.player1-info').classList.toggle('current-turn', gameState.currentPlayer === 1);
+    document.querySelector('.player2-info').classList.toggle('current-turn', gameState.currentPlayer === 2);
+  }
+  
+  //================================================================
+  // 4. ユーザー操作の処理
+  //================================================================
+  function onCellClick(e) {
+    if (currentMode !== 'move' || gameState.winner || !e.currentTarget.querySelector('.valid-move-highlight')) return;
+    const action = {
+      type: 'move',
+      data: {
+        newRow: parseInt(e.currentTarget.dataset.row),
+        newCol: parseInt(e.currentTarget.dataset.col),
+      }
+    };
+    processPlayerAction(action);
+  }
+
+  function onWallSlotClick(e) {
+    if (currentMode !== 'wall' || gameState.winner) return;
+    const action = {
+      type: 'wall',
+      data: {
+        row: parseInt(e.currentTarget.dataset.row),
+        col: parseInt(e.currentTarget.dataset.col),
+        orientation: e.currentTarget.dataset.orientation,
+      }
+    };
+    processPlayerAction(action);
+  }
+
+  //================================================================
+  // 5. ゲームロジック (GASから移植)
+  //================================================================
+  function initializeGame(boardSize) {
+    const wallCount = Math.floor((boardSize * boardSize - 1) / 8);
+    const startRow = Math.floor(boardSize / 2);
+
+    gameState = {
+      boardSize: boardSize,
+      currentPlayer: 1,
+      players: {
+        '1': { row: startRow, col: 0, walls: wallCount, goalCol: boardSize - 1 },
+        '2': { row: startRow, col: boardSize - 1, walls: wallCount, goalCol: 0 },
+      },
+      walls: [],
+      winner: null,
+      message: `プレイヤー１のターン`,
+    };
+    updateUI();
+  }
+
+  function processPlayerAction(action) {
+    if (gameState.winner) return;
+
+    const { type, data } = action;
+    const player = gameState.currentPlayer;
+
+    if (type === 'move') {
+      const { newRow, newCol } = data;
+      const validation = validateMove(gameState, player, newRow, newCol);
+      if (validation.isValid) {
+        gameState.players[player].row = newRow;
+        gameState.players[player].col = newCol;
+        if (checkWinCondition(gameState, player)) {
+          gameState.winner = player;
+          gameState.message = `🎉プレイヤー${player}の勝ち！おめでとう！🎉`;
+        } else {
+          gameState.currentPlayer = player === 1 ? 2 : 1;
+          gameState.message = `プレイヤー${gameState.currentPlayer}のターン`;
+        }
+      } else {
+        gameState.message = validation.message;
+      }
+    } else if (type === 'wall') {
+      const { row, col, orientation } = data;
+      const validation = validateWallPlacement(gameState, player, row, col, orientation);
+      if (validation.isValid) {
+        gameState.players[player].walls--;
+        gameState.walls.push({ row, col, orientation });
+        gameState.currentPlayer = player === 1 ? 2 : 1;
+        gameState.message = `プレイヤー${gameState.currentPlayer}のターン`;
+      } else {
+        gameState.message = validation.message;
+      }
+    }
+    updateUI();
+  }
+
+  function validateMove(state, player, newRow, newCol) {
+    const { boardSize, players, walls } = state;
+    const p1 = players['1'];
+    const p2 = players['2'];
+    const currentP = players[player];
+    const opponentP = players[player === 1 ? '2' : '1'];
+
+    // 範囲外チェック
+    if(newRow < 0 || newRow >= boardSize || newCol < 0 || newCol >= boardSize) {
+        return { isValid: false, message: "盤の外には動かせないよ。"}
+    }
+    
+    // 通常の1マス移動
+    const rowDiff = Math.abs(newRow - currentP.row);
+    const colDiff = Math.abs(newCol - currentP.col);
+    if ((rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1)) {
+        if (newRow === opponentP.row && newCol === opponentP.col) {
+            return { isValid: false, message: "相手のコマには入れないよ。"};
+        }
+        if (isWallBlocking(currentP.row, currentP.col, newRow, newCol, walls)) {
+            return { isValid: false, message: "カベがあって進めないよ。" };
+        }
+        return { isValid: true };
+    }
+
+    // ジャンプのロジック
+    const isAdjacent = (Math.abs(p1.row - p2.row) + Math.abs(p1.col - p2.col)) === 1;
+    if (!isAdjacent) {
+      return { isValid: false, message: "そこには動かせないみたい。" };
+    }
+
+    // 直線ジャンプ
+    const jumpRow = opponentP.row + (opponentP.row - currentP.row);
+    const jumpCol = opponentP.col + (opponentP.col - currentP.col);
+    if (newRow === jumpRow && newCol === jumpCol) {
+      if (isWallBlocking(currentP.row, currentP.col, opponentP.row, opponentP.col, walls)) {
+        return { isValid: false, message: "ジャンプできないよ。" };
+      }
+      if (isWallBlocking(opponentP.row, opponentP.col, newRow, newCol, walls)) {
+        return { isValid: false, message: "ジャンプした先にカベがあるよ。" };
+      }
+      return { isValid: true };
+    }
+    
+    // 斜めジャンプ
+    const behindOpponentRow = opponentP.row + (opponentP.row - currentP.row);
+    const behindOpponentCol = opponentP.col + (opponentP.col - currentP.col);
+    const isWallBehindOpponent = isWallBlocking(opponentP.row, opponentP.col, behindOpponentRow, behindOpponentCol, walls) ||
+                                behindOpponentRow < 0 || behindOpponentRow >= boardSize ||
+                                behindOpponentCol < 0 || behindOpponentCol >= boardSize;
+
+    if (isWallBehindOpponent) {
+        if (isWallBlocking(currentP.row, currentP.col, opponentP.row, opponentP.col, walls)) {
+            return { isValid: false, message: "そこには動かせないみたい。"};
+        }
+        const diagRowDiff = Math.abs(newRow - opponentP.row);
+        const diagColDiff = Math.abs(newCol - opponentP.col);
+        if((diagRowDiff === 1 && diagColDiff === 0) || (diagRowDiff === 0 && diagColDiff === 1)) {
+            if (isWallBlocking(opponentP.row, opponentP.col, newRow, newCol, walls)){
+                return { isValid: false, message: "カベがあって進めないよ。" };
+            }
+            return {isValid: true};
+        }
+    }
+
+    return { isValid: false, message: "そこには動かせないみたい。" };
+  }
+
+  function validateWallPlacement(state, player, row, col, orientation) {
+    const { players, walls } = state;
+
+    if (players[player].walls <= 0) {
+      return { isValid: false, message: "もうカベは置けないよ。" };
+    }
+
+    for (const wall of walls) {
+      if (wall.row === row && wall.col === col && wall.orientation === orientation) {
+        return { isValid: false, message: "そこにはもうカベがあるよ。" };
+      }
+      if (wall.row === row && wall.col === col) {
+        return { isValid: false, message: "カベをクロスさせちゃダメだよ。" };
+      }
+      if (orientation === 'horizontal' && wall.orientation === 'horizontal' && wall.row === row && Math.abs(wall.col - col) === 1) {
+        return { isValid: false, message: "カベをくっつけて置けないよ。" };
+      }
+      if (orientation === 'vertical' && wall.orientation === 'vertical' && wall.col === col && Math.abs(wall.row - row) === 1) {
+        return { isValid: false, message: "カベをくっつけて置けないよ。" };
+      }
+    }
+
+    const tempWalls = [...walls, { row, col, orientation }];
+    const p1_can_reach = pathExists(players['1'], players['1'].goalCol, state.boardSize, tempWalls);
+    const p2_can_reach = pathExists(players['2'], players['2'].goalCol, state.boardSize, tempWalls);
+
+    if (!p1_can_reach || !p2_can_reach) {
+      return { isValid: false, message: "ゴールの道をふさいじゃダメ！" };
+    }
+
+    return { isValid: true };
+  }
+
+  function checkWinCondition(state, player) {
+    const { players } = state;
+    const currentP = players[player];
+    return currentP.col === currentP.goalCol;
+  }
+  
+  function highlightPossibleActions() {
+    document.querySelectorAll('.valid-move-highlight').forEach(el => el.remove());
+    document.querySelectorAll('.wall-slot').forEach(el => el.style.backgroundColor = 'rgba(0,0,0,0.1)');
+    
+    if (gameState.winner) return;
+    if (currentMode === 'move') {
+        const { players, walls, boardSize } = gameState;
+        const currentP = players[gameState.currentPlayer];
+        
+        for (let r = 0; r < boardSize; r++) {
+            for(let c = 0; c < boardSize; c++) {
+                if (validateMove(gameState, gameState.currentPlayer, r, c).isValid) {
+                    addHighlight(r, c);
+                }
+            }
+        }
+    } else { // wall mode
+        if (gameState.players[gameState.currentPlayer].walls > 0) {
+            document.querySelectorAll('.wall-slot').forEach(el => {
+                const row = parseInt(el.dataset.row);
+                const col = parseInt(el.dataset.col);
+                const orientation = el.dataset.orientation;
+                if(validateWallPlacement(gameState, gameState.currentPlayer, row, col, orientation).isValid) {
+                     el.style.backgroundColor = 'rgba(46, 204, 113, 0.2)';
+                }
+            });
+        }
+    }
+  }
+
+  function addHighlight(r, c) {
+    if (r < 0 || r >= gameState.boardSize || c < 0 || c >= gameState.boardSize) return;
+    const cell = document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`);
+    if (cell && !cell.querySelector('.pawn')) {
+        const highlight = document.createElement('div');
+        highlight.className = 'valid-move-highlight';
+        cell.appendChild(highlight);
+    }
+  }
+
+  //================================================================
+  // 6. ヘルパー関数
+  //================================================================
+  function setMode(mode) {
+    currentMode = mode;
+    moveModeBtn.classList.toggle('active', mode === 'move');
+    wallModeBtn.classList.toggle('active', mode === 'wall');
+    highlightPossibleActions();
+  }
+
+  function resetGame() {
+    winnerModal.style.display = 'none';
+    gameScreen.style.display = 'none';
+    setupScreen.style.display = 'block';
+  }
+
+  function isWallBlocking(r1, c1, r2, c2, walls) {
+    for (const wall of walls) {
+      if (wall.orientation === 'horizontal') {
+        if (r1 !== r2) {
+          if (wall.row === Math.min(r1, r2) && (wall.col === c1 || wall.col === c1 - 1)) {
+            return true;
+          }
+        }
+      } else { // vertical
+        if (c1 !== c2) {
+          if (wall.col === Math.min(c1, c2) && (wall.row === r1 || wall.row === r1 - 1)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  function pathExists(player, goalCol, boardSize, walls) {
+    const queue = [{ row: player.row, col: player.col }];
+    const visited = new Set([`${player.row},${player.col}`]);
+    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+    while (queue.length > 0) {
+      const { row, col } = queue.shift();
+      if (col === goalCol) {
+        return true;
+      }
+      for (const [dr, dc] of directions) {
+        const nextRow = row + dr;
+        const nextCol = col + dc;
+        const key = `${nextRow},${nextCol}`;
+        if (nextRow < 0 || nextRow >= boardSize || nextCol < 0 || nextCol >= boardSize) continue;
+        if (visited.has(key)) continue;
+        if (isWallBlocking(row, col, nextRow, nextCol, walls)) continue;
+        visited.add(key);
+        queue.push({ row: nextRow, col: nextCol });
+      }
+    }
+    return false;
+  }
+
+  </script>
+</body>
+</html>
