@@ -194,6 +194,16 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [modal, setModal] = useState({ show: false });
 
+  // ファビコンとタイトルの設定
+  useEffect(() => {
+    const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+    link.type = 'image/png';
+    link.rel = 'icon';
+    link.href = './favicon.png';
+    document.head.appendChild(link);
+    document.title = 'カベカベ合戦！';
+  }, []);
+
   useEffect(() => {
     const defaultWalls = boardSize === 9 ? 10 : Math.floor((boardSize * boardSize) / 8);
     setSetupWalls({ 1: defaultWalls, 2: defaultWalls });
