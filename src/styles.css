@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: ui-rounded, "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --app-header-height: 68px;
+  --app-controls-height: 92px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+html {
+  min-height: 100%;
+  background: #fff9c4;
+  overscroll-behavior: none;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* Keep the board as large as the current viewport permits. */
+.max-w-\[600px\] {
+  max-width: min(92vw, calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 5.5rem)) !important;
+}
+
+@media (max-width: 1100px) {
+  /* Tablet portrait and compact landscape: use the compact player cards. */
+  .md\:flex {
+    display: none !important;
+  }
+
+  .md\:hidden {
+    display: flex !important;
+  }
+
+  .max-w-\[600px\] {
+    max-width: min(96vw, calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 8.5rem)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --app-header-height: 60px;
+    --app-controls-height: 88px;
+  }
+
+  nav {
+    padding-top: max(0.5rem, env(safe-area-inset-top)) !important;
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+  }
+
+  main {
+    padding-top: 0.5rem !important;
+    padding-bottom: calc(var(--app-controls-height) + env(safe-area-inset-bottom) + 0.5rem) !important;
+  }
+
+  .max-w-\[600px\] {
+    max-width: min(98vw, calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 8rem)) !important;
+  }
+
+  ruby rt {
+    font-size: 0.5em;
+  }
+}
+
+@media (max-height: 700px) and (orientation: landscape) {
+  :root {
+    --app-header-height: 54px;
+    --app-controls-height: 78px;
+  }
+
+  nav {
+    padding-block: 0.35rem !important;
+  }
+
+  main {
+    padding-top: 0.25rem !important;
+    padding-bottom: calc(var(--app-controls-height) + env(safe-area-inset-bottom)) !important;
+  }
+
+  footer {
+    display: none;
+  }
+
+  .max-w-\[600px\] {
+    max-width: calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 3.5rem) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
