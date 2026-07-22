@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Info, Play, AlertTriangle, XCircle, CheckCircle, Undo2, Settings2, Minus, Plus } from 'lucide-react';
 
 // ==========================================
@@ -61,8 +61,8 @@ const playSound = (type) => {
       osc.start(now);
       osc.stop(now + 0.2);
       break;
-    case 'win':
-      const notes = [523.25, 659.25, 783.99, 1046.50]; 
+    case 'win': {
+      const notes = [523.25, 659.25, 783.99, 1046.50];
       notes.forEach((freq, i) => {
         const o = audioCtx.createOscillator();
         const g = audioCtx.createGain();
@@ -80,6 +80,7 @@ const playSound = (type) => {
         o.stop(t + 0.5);
       });
       break;
+    }
   }
 };
 
@@ -174,6 +175,31 @@ const validateWall = (r, c, orientation, walls, boardSize, players) => {
   return null;
 };
 
+// Appの外で定義することで、再レンダー時の不要な再マウントを防ぐ
+const PlayerPanel = ({ player, turn, winner, wallsLeft }) => {
+  const isTurn = turn === player && !winner;
+  const isP1 = player === 1;
+  return (
+    <div className={`player-panel p-3 rounded-2xl border-2 transition-all duration-300 ${isTurn ? 'bg-white shadow-xl scale-105 ring-4' : 'bg-white/60 opacity-80 border-transparent'} ${isP1 ? (isTurn ? 'border-blue-400 ring-blue-300' : '') : (isTurn ? 'border-red-400 ring-red-300' : '')}`}>
+      <div className={`font-bold text-center text-lg ${isP1 ? 'text-blue-600' : 'text-red-600'}`}>
+        <span>{isP1 ? <R t="青" r="あお" /> : <R t="赤" r="あか" />}チーム</span>
+      </div>
+      <div className="flex items-center justify-center gap-3 my-2">
+        <span className="text-4xl filter drop-shadow-md">{isP1 ? '🔵' : '🔴'}</span>
+        <div className="leading-none text-left">
+          <div className="text-xs text-gray-500 mb-1 font-bold"><span>のこりカベ</span></div>
+          <div className="font-black text-4xl text-gray-800">
+            {wallsLeft[player]}<span className="text-sm font-normal ml-1 text-gray-500"><span><R t="枚" r="まい"/></span></span>
+          </div>
+        </div>
+      </div>
+      <div className={`panel-hint mt-3 py-2 px-2 rounded-xl text-center font-bold text-sm text-white shadow-sm ${isP1 ? 'bg-blue-500' : 'bg-red-500'}`}>
+        {isP1 ? <span><R t="右" r="みぎ"/>へ<R t="進" r="すす"/>め！ 👉</span> : <span>👈 <R t="左" r="ひだり"/>へ<R t="進" r="すす"/>め！</span>}
+      </div>
+    </div>
+  );
+};
+
 // ==========================================
 // 3. メインアプリケーション
 // ==========================================
@@ -194,20 +220,11 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [modal, setModal] = useState({ show: false });
 
-  // ファビコンとタイトルの設定
-  useEffect(() => {
-    const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
-    link.type = 'image/png';
-    link.rel = 'icon';
-    link.href = './favicon.png';
-    document.head.appendChild(link);
-    document.title = 'カベカベ合戦！';
-  }, []);
-
-  useEffect(() => {
-    const defaultWalls = boardSize === 9 ? 10 : Math.floor((boardSize * boardSize) / 8);
+  const handleBoardSizeChange = (size) => {
+    setBoardSize(size);
+    const defaultWalls = size === 9 ? 10 : Math.floor((size * size) / 8);
     setSetupWalls({ 1: defaultWalls, 2: defaultWalls });
-  }, [boardSize]);
+  };
 
   useEffect(() => {
     if (modal.show && modal.timer) {
@@ -289,23 +306,23 @@ export default function App() {
         }
       }
     } else {
+      if (wallsLeft[turn] <= 0) {
+        playSound('error');
+        showModal({
+          type: 'warning',
+          title: <span>カベがありません！</span>,
+          content: <span>もうカベを<R t="使" r="つか"/>い<R t="切" r="き"/>ってしまいました。<br/><R t="動" r="うご"/>かしてください。</span>,
+          timer: 2000
+        });
+        return;
+      }
       const errorMsg = validateWall(r, c, wallOrientation, walls, boardSize, players);
       if (errorMsg) {
         playSound('error');
         showModal({ type: 'error', title: <span><R t="置" r="お"/>けません</span>, content: errorMsg, timer: 1500 });
         return;
       }
-      if (wallsLeft[turn] <= 0) {
-        playSound('error');
-        showModal({ 
-          type: 'warning', 
-          title: <span>カベがありません！</span>, 
-          content: <span>もうカベを<R t="使" r="つか"/>い<R t="切" r="き"/>ってしまいました。<br/><R t="動" r="うご"/>かしてください。</span>, 
-          timer: 2000 
-        });
-        return;
-      }
-      
+
       saveHistory();
       playSound('wall');
       setWalls(prev => [...prev, { row: r, col: c, orientation: wallOrientation }]);
@@ -314,6 +331,18 @@ export default function App() {
     }
   };
 
+  // 現在の手番で移動できるマスを事前計算（毎セルの再計算を避ける）
+  const validMoveSet = useMemo(() => {
+    const set = new Set();
+    if (winner || mode !== 'move') return set;
+    for (let r = 0; r < boardSize; r++) {
+      for (let c = 0; c < boardSize; c++) {
+        if (isValidMove(players[turn], r, c, turn, players, walls)) set.add(`${r},${c}`);
+      }
+    }
+    return set;
+  }, [players, walls, turn, mode, winner, boardSize]);
+
   const GAP = 4;
   const getPositionStyle = (r, c) => ({
     left: `calc((100% - ${GAP * (boardSize - 1)}px) / ${boardSize} * ${c} + ${GAP * c}px)`,
@@ -321,30 +350,6 @@ export default function App() {
     width: `calc((100% - ${GAP * (boardSize - 1)}px) / ${boardSize})`,
     height: `calc((100% - ${GAP * (boardSize - 1)}px) / ${boardSize})`,
   });
-
-  const PlayerPanel = ({ player }) => {
-    const isTurn = turn === player && !winner;
-    const isP1 = player === 1;
-    return (
-      <div className={`p-3 rounded-2xl border-2 transition-all duration-300 ${isTurn ? 'bg-white shadow-xl scale-105 ring-4' : 'bg-white/60 opacity-80 border-transparent'} ${isP1 ? (isTurn ? 'border-blue-400 ring-blue-300' : '') : (isTurn ? 'border-red-400 ring-red-300' : '')}`}>
-        <div className={`font-bold text-center text-lg ${isP1 ? 'text-blue-600' : 'text-red-600'}`}>
-          <span>{isP1 ? <R t="青" r="あお" /> : <R t="赤" r="あか" />}チーム</span>
-        </div>
-        <div className="flex items-center justify-center gap-3 my-2">
-          <span className="text-4xl filter drop-shadow-md">{isP1 ? '🔵' : '🔴'}</span>
-          <div className="leading-none text-left">
-            <div className="text-xs text-gray-500 mb-1 font-bold"><span>のこりカベ</span></div>
-            <div className="font-black text-4xl text-gray-800">
-              {wallsLeft[player]}<span className="text-sm font-normal ml-1 text-gray-500"><span><R t="枚" r="まい"/></span></span>
-            </div>
-          </div>
-        </div>
-        <div className={`mt-3 py-2 px-2 rounded-xl text-center font-bold text-sm text-white shadow-sm ${isP1 ? 'bg-blue-500' : 'bg-red-500'}`}>
-          {isP1 ? <span><R t="右" r="みぎ"/>へ<R t="進" r="すす"/>め！ 👉</span> : <span>👈 <R t="左" r="ひだり"/>へ<R t="進" r="すす"/>め！</span>}
-        </div>
-      </div>
-    );
-  };
 
   const showRules = () => {
     showModal({
@@ -409,9 +414,10 @@ export default function App() {
         </div>
         <div className="flex gap-2">
           {screen === 'game' && (
-            <button 
+            <button
               onClick={handleUndo}
-              disabled={history.length === 0 || winner}
+              aria-label="一手もどす"
+              disabled={history.length === 0 || !!winner}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-full font-bold border-2 transition-all ${
                 history.length > 0 && !winner 
                 ? 'border-indigo-500 text-indigo-600 hover:bg-indigo-50 active:scale-95' 
@@ -421,8 +427,9 @@ export default function App() {
               <Undo2 size={18} /> <span className="text-sm hidden sm:inline"><span><R t="待" r="ま"/>った！</span></span>
             </button>
           )}
-          <button 
+          <button
             onClick={showRules}
+            aria-label="あそびかたを見る"
             className="w-10 h-10 rounded-full border-2 border-blue-500 text-blue-600 flex items-center justify-center hover:bg-blue-50 active:scale-90 transition-transform font-bold"
           >？</button>
         </div>
@@ -439,7 +446,7 @@ export default function App() {
                 <label className="block font-bold text-gray-700 mb-2"><span>ボードの<R t="大" r="おお"/>きさ</span></label>
                 <select 
                   value={boardSize} 
-                  onChange={e => setBoardSize(Number(e.target.value))}
+                  onChange={e => handleBoardSizeChange(Number(e.target.value))}
                   className="w-full p-3 rounded-xl border-2 border-gray-300 bg-white font-bold text-lg focus:border-blue-500 focus:outline-none"
                 >
                   <option value={7}>7x7 (ふつう)</option>
@@ -479,11 +486,11 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col md:flex-row items-center md:items-stretch justify-center gap-4 px-4 max-w-5xl mx-auto w-full">
-            <div className="hidden md:flex flex-col justify-center w-56 flex-shrink-0"><PlayerPanel player={1} /></div>
+          <div className="game-layout flex flex-col wide:flex-row items-center wide:items-stretch justify-center gap-4 px-4 max-w-5xl mx-auto w-full">
+            <div className="hidden wide:flex flex-col justify-center w-56 flex-shrink-0"><PlayerPanel player={1} turn={turn} winner={winner} wallsLeft={wallsLeft} /></div>
 
-            <div className="w-full max-w-[600px] flex-shrink-0 order-1 md:order-2">
-              <div className="text-center mb-4 h-10">
+            <div className="board-column w-full flex-shrink-0 order-1 wide:order-2">
+              <div className="turn-banner text-center mb-4 h-10">
                 {!winner && (
                   <div className={`inline-block px-6 py-2 rounded-full font-bold shadow-sm border-2 transition-colors ${turn === 1 ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-red-50 text-red-700 border-red-300'}`}>
                     {turn === 1 ? <span><R t="青" r="あお"/>チームの<R t="番" r="ばん"/>です</span> : <span><R t="赤" r="あか"/>チームの<R t="番" r="ばん"/>です</span>}
@@ -499,10 +506,10 @@ export default function App() {
                     {Array.from({ length: boardSize * boardSize }).map((_, i) => {
                       const r = Math.floor(i / boardSize);
                       const c = i % boardSize;
-                      const isHighlighted = mode === 'move' && !winner && isValidMove(players[turn], r, c, turn, players, walls);
+                      const isHighlighted = validMoveSet.has(`${r},${c}`);
                       return (
                         <div key={i} className="rounded-lg bg-[#f1f3f4] hover:bg-[#e3f2fd] transition-colors cursor-pointer flex items-center justify-center relative"
-                          onMouseEnter={() => setHoverCell({r, c})}
+                          onMouseEnter={mode === 'wall' ? () => setHoverCell({r, c}) : undefined}
                           onClick={() => handleCellClick(r, c)}
                         >
                           {isHighlighted && <div className="w-1/3 h-1/3 rounded-full bg-green-500/50 pointer-events-none animate-pulse" />}
@@ -545,11 +552,11 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex md:hidden w-full max-w-[600px] gap-2 order-2 mt-2">
-              <div className="flex-1"><PlayerPanel player={1} /></div>
-              <div className="flex-1"><PlayerPanel player={2} /></div>
+            <div className="panel-row flex wide:hidden board-column w-full gap-2 order-2 mt-2">
+              <div className="flex-1"><PlayerPanel player={1} turn={turn} winner={winner} wallsLeft={wallsLeft} /></div>
+              <div className="flex-1"><PlayerPanel player={2} turn={turn} winner={winner} wallsLeft={wallsLeft} /></div>
             </div>
-            <div className="hidden md:flex flex-col justify-center w-56 flex-shrink-0 order-3"><PlayerPanel player={2} /></div>
+            <div className="hidden wide:flex flex-col justify-center w-56 flex-shrink-0 order-3"><PlayerPanel player={2} turn={turn} winner={winner} wallsLeft={wallsLeft} /></div>
           </div>
         )}
       </main>
@@ -560,9 +567,9 @@ export default function App() {
       </footer>
 
       {screen === 'game' && !winner && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-gray-200 p-3 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-40 pb-safe">
-          <div className="max-w-3xl mx-auto flex gap-3 h-16">
-            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} onClick={() => setMode('move')}>
+        <div className="controls-bar fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-gray-200 p-3 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-40 pb-safe">
+          <div className="controls-inner max-w-3xl mx-auto flex gap-3 h-16">
+            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} onClick={() => { setMode('move'); setHoverCell(null); }}>
               <span className="text-2xl leading-none mb-1">🏃</span><span className="text-[10px] tracking-wider"><span><R t="歩" r="ある"/>く</span></span>
             </button>
             <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'wall' ? 'bg-amber-400 text-amber-900 shadow-lg shadow-amber-400/40 scale-105' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} onClick={() => setMode('wall')}>
@@ -601,7 +608,6 @@ export default function App() {
           </div>
         </div>
       )}
-      <style dangerouslySetInnerHTML={{__html: `.pb-safe { padding-bottom: env(safe-area-inset-bottom, 12px); }`}} />
     </div>
   );
 }
