@@ -7,8 +7,10 @@
   color-scheme: light;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  /* ナビ・下部操作バー・盤面まわりの余白（手番表示 + 盤面枠 + 余白）の目安 */
   --app-header-height: 68px;
-  --app-controls-height: 92px;
+  --app-controls-height: 88px;
+  --board-chrome: 8.5rem;
 }
 
 * {
@@ -58,30 +60,24 @@ select:focus-visible {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
-/* Keep the board as large as the current viewport permits. */
-.max-w-\[600px\] {
-  max-width: min(92vw, calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 5.5rem)) !important;
-}
-
-@media (max-width: 1100px) {
-  /* Tablet portrait and compact landscape: use the compact player cards. */
-  .md\:flex {
-    display: none !important;
-  }
-
-  .md\:hidden {
-    display: flex !important;
-  }
-
-  .max-w-\[600px\] {
-    max-width: min(96vw, calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 8.5rem)) !important;
-  }
+/*
+ * 盤面カラムのサイズ:
+ * 横は親のパディング内いっぱい、縦はビューポート高さから
+ * ナビ・操作バー・盤面まわりの余白を引いた分まで広げる。
+ * これでどの端末でもスクロールなしで盤面が最大サイズになる。
+ */
+.board-column {
+  max-width: min(
+    720px,
+    calc(100dvh - var(--app-header-height) - var(--app-controls-height) - var(--board-chrome))
+  );
+  margin-inline: auto;
 }
 
 @media (max-width: 640px) {
   :root {
     --app-header-height: 60px;
-    --app-controls-height: 88px;
+    --board-chrome: 8rem;
   }
 
   nav {
@@ -95,19 +91,21 @@ select:focus-visible {
     padding-bottom: calc(var(--app-controls-height) + env(safe-area-inset-bottom) + 0.5rem) !important;
   }
 
-  .max-w-\[600px\] {
-    max-width: min(98vw, calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 8rem)) !important;
-  }
-
   ruby rt {
     font-size: 0.5em;
   }
 }
 
+/*
+ * 高さの低い横向き端末（スマホの横持ちなど）:
+ * 下部の操作バーを右側の縦バーへ移し、手番バナー・フッターを隠して
+ * 縦方向のスペースをすべて盤面に使う。
+ */
 @media (max-height: 700px) and (orientation: landscape) {
   :root {
     --app-header-height: 54px;
-    --app-controls-height: 78px;
+    --app-controls-width: 150px;
+    --board-chrome: 4rem;
   }
 
   nav {
@@ -115,16 +113,59 @@ select:focus-visible {
   }
 
   main {
-    padding-top: 0.25rem !important;
-    padding-bottom: calc(var(--app-controls-height) + env(safe-area-inset-bottom)) !important;
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    padding-right: calc(var(--app-controls-width) + env(safe-area-inset-right)) !important;
   }
 
-  footer {
+  footer,
+  .turn-banner {
     display: none;
   }
 
-  .max-w-\[600px\] {
-    max-width: calc(100dvh - var(--app-header-height) - var(--app-controls-height) - 3.5rem) !important;
+  .controls-bar {
+    top: var(--app-header-height);
+    bottom: 0;
+    left: auto;
+    right: 0;
+    width: calc(var(--app-controls-width) + env(safe-area-inset-right));
+    border-top: none;
+    border-left: 1px solid #e5e7eb;
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.05);
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+
+  .controls-inner {
+    flex-direction: column;
+    height: 100%;
+    max-width: none;
+    gap: 0.5rem;
+  }
+
+  .board-column {
+    max-width: calc(100dvh - var(--app-header-height) - var(--board-chrome));
+  }
+
+  /* プレイヤーパネルは盤面の横に縦積みで表示 */
+  .game-layout {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .panel-row {
+    flex-direction: column;
+    width: 11rem;
+    flex-shrink: 0;
+    margin-top: 0;
+  }
+
+  /* パネルは進行ヒントを省いてコンパクトに（縦2枚が確実に収まるように） */
+  .panel-hint {
+    display: none;
+  }
+
+  .player-panel {
+    padding: 0.5rem;
   }
 }
 

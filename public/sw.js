@@ -1,5 +1,15 @@
-const CACHE_VERSION = 'kabe-kabe-v1';
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.png'];
+const CACHE_VERSION = 'kabe-kabe-v2';
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/favicon.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/maskable-192.png',
+  '/icons/maskable-512.png',
+  '/icons/apple-touch-icon.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -24,6 +34,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // ナビゲーションはネットワーク優先（最新のHTMLを取得し、オフライン時はキャッシュへフォールバック）
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
@@ -37,6 +48,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // その他のアセットはキャッシュ優先＋バックグラウンド更新
   event.respondWith(
     caches.match(request).then((cached) => {
       const network = fetch(request)
