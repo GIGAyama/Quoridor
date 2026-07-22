@@ -1,14 +1,15 @@
-const CACHE_VERSION = 'kabe-kabe-v2';
+const CACHE_VERSION = 'kabe-kabe-v3';
+// 相対URLで指定し、ルート直下でもサブパス配信でも正しく解決されるようにする
 const APP_SHELL = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/favicon.png',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/maskable-192.png',
-  '/icons/maskable-512.png',
-  '/icons/apple-touch-icon.png',
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './favicon.png',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/maskable-192.png',
+  './icons/maskable-512.png',
+  './icons/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -40,10 +41,10 @@ self.addEventListener('fetch', (event) => {
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put('/index.html', copy));
+          caches.open(CACHE_VERSION).then((cache) => cache.put('./index.html', copy));
           return response;
         })
-        .catch(() => caches.match('/index.html')),
+        .catch(() => caches.match('./index.html')),
     );
     return;
   }
