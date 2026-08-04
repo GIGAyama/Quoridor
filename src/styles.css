@@ -124,9 +124,20 @@ button {
 }
 
 button:focus-visible,
-select:focus-visible {
+select:focus-visible,
+a:focus-visible {
   outline: 3px solid #1d4ed8;
   outline-offset: 3px;
+}
+
+/*
+ * キーボードで盤面を歩くとき、いまどのマスに居るかが見えないと操作できない。
+ * マスは隙間 4px で並んでいるので、外向きの outline だと隣に重なる。内側へ寄せる。
+ */
+.board-cell:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: -3px;
+  z-index: 5;
 }
 
 .pb-safe {

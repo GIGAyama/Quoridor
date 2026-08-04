@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Info, Play, AlertTriangle, XCircle, CheckCircle, Undo2, Settings2, Minus, Plus, Download, Maximize2, Minimize2, RefreshCw, X } from 'lucide-react';
 import { applyUpdate } from './src/pwa.js';
 
@@ -196,9 +196,10 @@ const PlayerPanel = ({ player, turn, winner, wallsLeft }) => {
       <div className="flex items-center justify-center gap-3 my-2">
         <span className="panel-piece filter drop-shadow-md" aria-hidden="true">{isP1 ? '🔵' : '🔴'}</span>
         <div className="leading-none text-left">
-          <div className="text-xs text-gray-500 mb-1 font-bold"><span>のこりカベ</span></div>
-          <div className="font-black fs-count text-gray-800">
-            {wallsLeft[player]}<span className="text-sm font-normal ml-1 text-gray-500"><span><R t="枚" r="まい"/></span></span>
+          <div className="text-xs text-gray-600 mb-1 font-bold"><span>のこりカベ</span></div>
+          <div className="font-black fs-count text-gray-800"
+            aria-label={`のこりカベ ${wallsLeft[player]}枚`}>
+            <span aria-hidden="true">{wallsLeft[player]}<span className="text-sm font-normal ml-1 text-gray-600"><span><R t="枚" r="まい"/></span></span></span>
           </div>
         </div>
       </div>
@@ -237,6 +238,20 @@ export default function App() {
     return !standalone && !!window.__pwaInstallPrompt;
   });
   const [updateReady, setUpdateReady] = useState(false);
+
+  /*
+   * キーボードだけで遊べるようにするための「いま選んでいるマス」。
+   *
+   * 盤面のマスは <div onClick> で、tabindex も role も無かった。
+   * つまりマウスやタッチが使えない児童は、1手も指せない状態だった。
+   * 矢印キーで動かし、Enter か Space で決める形にする。
+   * グリッド全体で Tab を1回だけ受けたいので、選んでいるマスだけ tabIndex=0 にする
+   * （roving tabindex。81マスを Tab で順に辿らせない）。
+   */
+  const [cursor, setCursor] = useState({ r: 0, c: 0 });
+  const cellRefs = useRef({});
+  const modalRef = useRef(null);
+  const lastFocusRef = useRef(null);
 
   /*
    * インストールの案内と、更新の案内。
@@ -306,6 +321,56 @@ export default function App() {
 
   const showModal = (config) => setModal({ show: true, ...config });
 
+  /*
+   * モーダルの作法。
+   *
+   * これまで role も aria-modal も無く、Esc も効かず、フォーカスも閉じ込めていなかった。
+   * 「あそびかた」を開いたまま Tab を押すと、背面の盤面へ抜けていた。
+   *
+   * ・開いたら中の最初のボタンへフォーカスを移す（読み上げが本文から始まる）
+   * ・Tab は中で巡回させる
+   * ・Esc で閉じる。閉じ方は自動で消えるときと同じ経路に繋ぐ（挙動を一致させる）
+   * ・閉じたら、開く前に居た場所へフォーカスを戻す
+   */
+  useEffect(() => {
+    if (!modal.show) return undefined;
+    const node = modalRef.current;
+    if (!node) return undefined;
+    lastFocusRef.current = document.activeElement;
+
+    const focusables = () => Array.from(node.querySelectorAll(
+      'button:not([disabled]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    ));
+    (focusables()[0] || node).focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setModal((m) => ({ ...m, show: false }));
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const list = focusables();
+      if (list.length === 0) { e.preventDefault(); return; }
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      const back = lastFocusRef.current;
+      if (back && typeof back.focus === 'function' && document.contains(back)) back.focus();
+    };
+  }, [modal.show]);
+
   const handleStart = () => {
     initAudio();
     const center = Math.floor(boardSize / 2);
@@ -319,6 +384,7 @@ export default function App() {
     setWinner(null);
     setMode('move');
     setHistory([]);
+    setCursor({ r: center, c: 0 });   // キーボード操作の起点は先手の駒
     setScreen('game');
   };
 
@@ -357,6 +423,7 @@ export default function App() {
           ...prev,
           [turn]: { ...prev[turn], row: r, col: c }
         }));
+        setCursor({ r, c });
         
         if (c === players[turn].goalCol) {
           setWinner(turn);
@@ -401,6 +468,41 @@ export default function App() {
       switchTurn();
     }
   };
+
+  /*
+   * 盤面のキーボード操作。
+   * 矢印キーで選ぶマスを動かし、Enter か Space で決める。
+   * カベモードでは、選んだマスがそのままカベの置き場所の下見（プレビュー）になる。
+   */
+  const handleCellKeyDown = (e, r, c) => {
+    const DIRS = {
+      ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1],
+    };
+    if (DIRS[e.key]) {
+      e.preventDefault();
+      const nr = Math.min(boardSize - 1, Math.max(0, r + DIRS[e.key][0]));
+      const nc = Math.min(boardSize - 1, Math.max(0, c + DIRS[e.key][1]));
+      setCursor({ r: nr, c: nc });
+      if (mode === 'wall') setHoverCell({ r: nr, c: nc });
+      cellRefs.current[`${nr},${nc}`]?.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleCellClick(r, c);
+    }
+  };
+
+  /*
+   * 画面の変化を読み上げてもらうための文言。
+   * 目で見て分かること（手番の色・のこりカベ）を、見えない人にも同じだけ伝える。
+   */
+  const liveMessage = winner
+    ? `${winner === 1 ? '青' : '赤'}チームの勝ちです`
+    : screen === 'game'
+      ? `${turn === 1 ? '青' : '赤'}チームの番です。のこりカベ ${wallsLeft[turn]}枚。`
+        + `${mode === 'move' ? 'いまはコマを動かします' : `いまはカベを${wallOrientation === 'v' ? 'タテ' : 'ヨコ'}に置きます`}`
+      : '';
 
   // 現在の手番で移動できるマスを事前計算（毎セルの再計算を避ける）
   const validMoveSet = useMemo(() => {
@@ -480,9 +582,9 @@ export default function App() {
       }}
     >
       <nav className="bg-white/90 backdrop-blur shadow-sm sticky top-0 z-40 border-b-4 border-yellow-300 px-4 py-3 flex justify-between items-center">
-        <div className="font-black fs-nav text-blue-600 flex items-center gap-2">
+        <h1 className="font-black fs-nav text-blue-600 flex items-center gap-2 m-0">
           <span>🚧 カベ<R t="合戦" r="がっせん"/>！</span>
-        </div>
+        </h1>
         <div className="flex gap-2">
           {screen === 'game' && (
             <button
@@ -495,7 +597,7 @@ export default function App() {
                 : 'border-gray-300 text-gray-400 opacity-50 cursor-not-allowed'
               }`}
             >
-              <Undo2 size={18} /> <span className="text-sm hidden sm:inline"><span><R t="待" r="ま"/>った！</span></span>
+              <Undo2 size={18} aria-hidden="true" /> <span className="text-sm hidden sm:inline"><span><R t="待" r="ま"/>った！</span></span>
             </button>
           )}
           {installAvailable && (
@@ -526,16 +628,24 @@ export default function App() {
         </div>
       </nav>
 
+      {/*
+        画面の変化（手番の交代・勝敗）を読み上げる。
+        見て分かることを、見えない人にも同じだけ伝えるための領域。
+        目には見えないので、置き場所は本文の前でよい。
+      */}
+      <p className="sr-only" aria-live="polite" aria-atomic="true">{liveMessage}</p>
+
       <main className="flex-grow flex flex-col pt-4 pb-32">
         {screen === 'setup' ? (
           <div className="flex-grow flex items-center justify-center p-4">
             <div className="bg-white/95 backdrop-blur-sm p-6 sm:p-8 rounded-3xl shadow-xl w-full max-w-md text-center border-4 border-white">
-              <h1 className="fs-title font-black text-blue-600 mb-2 animate-pulse"><span><R t="道" r="みち"/>を<R t="切" r="き"/>り<R t="拓" r="ひら"/>け！</span></h1>
+              <h2 className="fs-title font-black text-blue-600 mb-2 animate-pulse"><span><R t="道" r="みち"/>を<R t="切" r="き"/>り<R t="拓" r="ひら"/>け！</span></h2>
               <p className="text-gray-500 mb-6 font-medium"><span><R t="相手" r="あいて"/>のゴールを<R t="目指" r="めざ"/>す<R t="対戦" r="たいせん"/>パズル</span></p>
               
               <div className="bg-gray-50 p-4 rounded-2xl mb-4 text-left border border-gray-100">
-                <label className="block font-bold text-gray-700 mb-2"><span>ボードの<R t="大" r="おお"/>きさ</span></label>
+                <label htmlFor="board-size" className="block font-bold text-gray-700 mb-2"><span>ボードの<R t="大" r="おお"/>きさ</span></label>
                 <select 
+                  id="board-size"
                   value={boardSize} 
                   onChange={e => handleBoardSizeChange(Number(e.target.value))}
                   className="w-full p-3 rounded-xl border-2 border-gray-300 bg-white font-bold text-lg focus:border-blue-500 focus:outline-none"
@@ -548,22 +658,22 @@ export default function App() {
 
               <div className="bg-orange-50 p-4 rounded-2xl mb-8 text-left border border-orange-100">
                 <label className="flex items-center gap-2 font-bold text-orange-800 mb-3">
-                  <Settings2 size={18} /> <span>ハンデ<R t="設定" r="せってい"/>（カベの<R t="枚数" r="まいすう"/>）</span>
+                  <Settings2 size={18} aria-hidden="true" /> <span>ハンデ<R t="設定" r="せってい"/>（カベの<R t="枚数" r="まいすう"/>）</span>
                 </label>
                 <div className="flex justify-between items-center mb-3">
                   <span className="font-bold text-blue-600"><span><R t="青" r="あお"/>チーム</span></span>
                   <div className="flex items-center gap-3">
-                    <button onClick={() => setSetupWalls(p => ({...p, 1: Math.max(0, p[1]-1)}))} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold hover:bg-blue-200 active:scale-90"><Minus size={16}/></button>
+                    <button aria-label="青チームのカベを1まいへらす" onClick={() => setSetupWalls(p => ({...p, 1: Math.max(0, p[1]-1)}))} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold hover:bg-blue-200 active:scale-90"><Minus size={16} aria-hidden="true" /></button>
                     <span className="w-6 text-center font-bold text-xl">{setupWalls[1]}</span>
-                    <button onClick={() => setSetupWalls(p => ({...p, 1: Math.min(20, p[1]+1)}))} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold hover:bg-blue-200 active:scale-90"><Plus size={16}/></button>
+                    <button aria-label="青チームのカベを1まいふやす" onClick={() => setSetupWalls(p => ({...p, 1: Math.min(20, p[1]+1)}))} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold hover:bg-blue-200 active:scale-90"><Plus size={16} aria-hidden="true" /></button>
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-red-600"><span><R t="赤" r="あか"/>チーム</span></span>
                   <div className="flex items-center gap-3">
-                    <button onClick={() => setSetupWalls(p => ({...p, 2: Math.max(0, p[2]-1)}))} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold hover:bg-red-200 active:scale-90"><Minus size={16}/></button>
+                    <button aria-label="赤チームのカベを1まいへらす" onClick={() => setSetupWalls(p => ({...p, 2: Math.max(0, p[2]-1)}))} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold hover:bg-red-200 active:scale-90"><Minus size={16} aria-hidden="true" /></button>
                     <span className="w-6 text-center font-bold text-xl">{setupWalls[2]}</span>
-                    <button onClick={() => setSetupWalls(p => ({...p, 2: Math.min(20, p[2]+1)}))} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold hover:bg-red-200 active:scale-90"><Plus size={16}/></button>
+                    <button aria-label="赤チームのカベを1まいふやす" onClick={() => setSetupWalls(p => ({...p, 2: Math.min(20, p[2]+1)}))} className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold hover:bg-red-200 active:scale-90"><Plus size={16} aria-hidden="true" /></button>
                   </div>
                 </div>
               </div>
@@ -572,7 +682,7 @@ export default function App() {
                 onClick={handleStart}
                 className="w-full py-4 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all text-white font-black text-xl shadow-lg shadow-blue-600/30 flex justify-center items-center gap-2"
               >
-                <Play fill="currentColor" /> <span>ゲーム<R t="開始" r="かいし"/>！</span>
+                <Play fill="currentColor" aria-hidden="true" /> <span>ゲーム<R t="開始" r="かいし"/>！</span>
               </button>
             </div>
           </div>
@@ -593,15 +703,34 @@ export default function App() {
                 
                 <div className="relative w-full aspect-square touch-manipulation" onMouseLeave={() => setHoverCell(null)}>
                   
-                  <div className="absolute inset-0" style={{ display: 'grid', gridTemplateColumns: `repeat(${boardSize}, 1fr)`, gridTemplateRows: `repeat(${boardSize}, 1fr)`, gap: `${GAP}px` }}>
+                  <div
+                    className="absolute inset-0"
+                    role="grid"
+                    aria-label="ゲームばん。やじるしキーで えらび、Enter か Space できめます"
+                    style={{ display: 'grid', gridTemplateColumns: `repeat(${boardSize}, 1fr)`, gridTemplateRows: `repeat(${boardSize}, 1fr)`, gap: `${GAP}px` }}
+                  >
                     {Array.from({ length: boardSize * boardSize }).map((_, i) => {
                       const r = Math.floor(i / boardSize);
                       const c = i % boardSize;
                       const isHighlighted = validMoveSet.has(`${r},${c}`);
+                      const occupant = players[1].row === r && players[1].col === c ? '青のコマ'
+                        : players[2].row === r && players[2].col === c ? '赤のコマ' : '';
+                      // roving tabindex。81マスを Tab で順に辿らせないため、
+                      // Tab で入れるのは「いま選んでいるマス」1つだけにする。
+                      const isCursor = cursor.r === r && cursor.c === c;
                       return (
-                        <div key={i} className="board-cell rounded-lg bg-[#f1f3f4] hover:bg-[#e3f2fd] transition-colors cursor-pointer flex items-center justify-center relative"
+                        <div key={i}
+                          ref={(el) => { cellRefs.current[`${r},${c}`] = el; }}
+                          className="board-cell rounded-lg bg-[#f1f3f4] hover:bg-[#e3f2fd] transition-colors cursor-pointer flex items-center justify-center relative"
+                          role="gridcell"
+                          tabIndex={isCursor ? 0 : -1}
+                          aria-label={`${r + 1}だん ${c + 1}れつ`
+                            + `${occupant ? `、${occupant}` : ''}`
+                            + `${isHighlighted ? '、ここへ うごけます' : ''}`}
                           onMouseEnter={mode === 'wall' ? () => setHoverCell({r, c}) : undefined}
+                          onFocus={() => { setCursor({ r, c }); if (mode === 'wall') setHoverCell({ r, c }); }}
                           onClick={() => handleCellClick(r, c)}
+                          onKeyDown={(e) => handleCellKeyDown(e, r, c)}
                         >
                           {isHighlighted && <div className="board-cell-hint w-1/3 h-1/3 rounded-full bg-green-600/60 pointer-events-none animate-pulse" />}
                         </div>
@@ -711,11 +840,19 @@ export default function App() {
 
       {modal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl scale-100 transition-transform">
+          <div
+            ref={modalRef}
+            /* エラーと注意は「いま起きたこと」なので alertdialog にして、開いた時点で読み上げてもらう */
+            role={modal.type === 'error' || modal.type === 'warning' ? 'alertdialog' : 'dialog'}
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            tabIndex={-1}
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl scale-100 transition-transform focus:outline-none"
+          >
             <div className={`flex justify-center mb-4 ${modal.type === 'success' ? 'text-green-700' : modal.type === 'error' ? 'text-red-600' : modal.type === 'warning' ? 'text-amber-700' : 'text-blue-600'}`}>
               {modal.type === 'success' ? <CheckCircle size={56} strokeWidth={2.5} /> : modal.type === 'error' ? <XCircle size={56} strokeWidth={2.5} /> : modal.type === 'warning' ? <AlertTriangle size={56} strokeWidth={2.5} /> : <Info size={56} strokeWidth={2.5} />}
             </div>
-            <h3 className="text-2xl font-black text-center mb-3 text-gray-800"><span>{modal.title}</span></h3>
+            <h2 id="modal-title" className="text-2xl font-black text-center mb-3 text-gray-800"><span>{modal.title}</span></h2>
             <div className="text-center text-gray-600 mb-6 font-medium leading-relaxed">{modal.content}</div>
             {modal.onConfirm && (
               <button onClick={() => { modal.onConfirm(); setModal(m => ({ ...m, show: false })); }} className={`w-full py-3.5 rounded-full font-bold text-lg text-white shadow-md active:scale-95 transition-all ${modal.type === 'success' ? 'bg-green-700 hover:bg-green-800' : modal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : modal.type === 'warning' ? 'bg-amber-700 hover:bg-amber-800' : 'bg-blue-600 hover:bg-blue-700'}`}>

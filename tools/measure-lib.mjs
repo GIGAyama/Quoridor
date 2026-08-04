@@ -200,6 +200,12 @@ export const INJECTED_MEASURE_SOURCE = `
           text: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 24),
           w: Math.round(w * 10) / 10,
           h: Math.round(h * 10) / 10,
+          // 盤面のマスは「ボタン」ではなく、盤の大きさに従って伸び縮みする格子である。
+          // 9x9 を 320x568 の画面に収めると、どう組んでも 1マス 44px にはならない
+          // （盤だけで 400px 以上要る）。ボタンと同じ土俵で数えると、
+          // 直せるはずの操作ボタンの不良が盤面の数字に埋もれて見えなくなる。
+          // 分けて数え、盤面の実寸は実測値として別に報告する。
+          isBoardCell: el.classList.contains('board-cell'),
         });
       }
     }

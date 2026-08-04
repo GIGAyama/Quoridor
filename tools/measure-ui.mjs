@@ -137,20 +137,30 @@ const run = async () => {
     return [...m.values()].sort((a, b) => (a.ratio ?? a.h ?? 0) - (b.ratio ?? b.h ?? 0));
   };
 
+  // 操作ボタンと盤面のマスは分けて数える（盤面は物理的に 44px にできない。理由は measure-lib.mjs）
+  const tapControls = report.tap.filter((t) => !t.isBoardCell);
+  const tapBoard = report.tap.filter((t) => t.isBoardCell);
+
   const out = {
     contrastTotal: report.contrast.length,
     contrast: group(report.contrast, (r) => `${r.selector}|${r.color}|${r.bg}|${r.text}`),
-    tapTotal: report.tap.length,
-    tap: group(report.tap, (r) => `${r.selector}|${r.text}`),
+    tapControlsTotal: tapControls.length,
+    tapControls: group(tapControls, (r) => `${r.selector}|${r.text}`),
+    tapBoardTotal: tapBoard.length,
+    tapBoard: group(tapBoard, (r) => `${r.w}x${r.h}`),
     overflow: report.overflow,
     consoleErrors: report.consoleErrors,
     cspViolations: report.cspViolations,
     failedRequests: report.failedRequests,
   };
   console.log(JSON.stringify(out, null, 2));
-  const bad = out.contrastTotal + out.tapTotal + out.overflow.length +
+  const bad = out.contrastTotal + out.tapControlsTotal + out.overflow.length +
               out.consoleErrors.length + out.cspViolations.length;
-  console.error(`\n== 合計 ==\nコントラスト ${out.contrastTotal} 件 / タップ ${out.tapTotal} 件 / 横スクロール ${out.overflow.length} 件 / JSエラー ${out.consoleErrors.length} 件 / CSP違反 ${out.cspViolations.length} 件`);
+  console.error(`\n== 合計 ==\nコントラスト ${out.contrastTotal} 件 / 操作ボタンのタップ ${out.tapControlsTotal} 件 / 横スクロール ${out.overflow.length} 件 / JSエラー ${out.consoleErrors.length} 件 / CSP違反 ${out.cspViolations.length} 件`);
+  if (tapBoard.length) {
+    const sizes = [...new Set(tapBoard.map((t) => `${t.w}x${t.h}px`))].join(', ');
+    console.error(`（参考・判定には含めない）盤面のマスが 44px 未満になる組み合わせ ${tapBoard.length} 件: ${sizes}`);
+  }
   process.exit(bad === 0 ? 0 : 1);
 };
 
