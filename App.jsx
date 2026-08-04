@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Info, Play, AlertTriangle, XCircle, CheckCircle, Undo2, Settings2, Minus, Plus, Download, Maximize2, Minimize2, RefreshCw, X } from 'lucide-react';
 import { applyUpdate } from './src/pwa.js';
+// 画面に関係しない判定は src/rules.js へ出してある（テストを書けるようにするため）。
+// 関数名と引数の並びは変えていない。
+import { isValidMove, pathExists } from './src/rules.js';
 
 // ==========================================
 // 1. サウンドエンジン (Web Audio API)
@@ -102,66 +105,6 @@ const R = ({ t, r }) => (
     {t}<rt className="text-[0.6em] font-normal leading-none select-none pointer-events-none">{r}</rt>
   </ruby>
 );
-
-const isWallBlocking = (r1, c1, r2, c2, walls) => {
-  for (const w of walls) {
-    if (w.orientation === 'h') {
-      if (Math.abs(r1 - r2) === 1 && c1 === c2) {
-        const borderRow = Math.min(r1, r2);
-        if (w.row === borderRow && (c1 === w.col || c1 === w.col + 1)) return true;
-      }
-    } else {
-      if (Math.abs(c1 - c2) === 1 && r1 === r2) {
-        const borderCol = Math.min(c1, c2);
-        if (w.col === borderCol && (r1 === w.row || r1 === w.row + 1)) return true;
-      }
-    }
-  }
-  return false;
-};
-
-const isValidMove = (player, targetR, targetC, pid, players, walls) => {
-  if (player.row === targetR && player.col === targetC) return false;
-  const opponentPid = pid === 1 ? 2 : 1;
-  const opponent = players[opponentPid];
-  const dist = Math.abs(player.row - targetR) + Math.abs(player.col - targetC);
-  
-  if (dist === 1) {
-    if (targetR === opponent.row && targetC === opponent.col) return false;
-    return !isWallBlocking(player.row, player.col, targetR, targetC, walls);
-  }
-  if (dist === 2 && (player.row === targetR || player.col === targetC)) {
-    const midR = (player.row + targetR) / 2;
-    const midC = (player.col + targetC) / 2;
-    if (opponent.row === midR && opponent.col === midC) {
-      return !isWallBlocking(player.row, player.col, midR, midC, walls) && 
-             !isWallBlocking(midR, midC, targetR, targetC, walls);
-    }
-  }
-  return false;
-};
-
-const pathExists = (pid, players, walls, boardSize) => {
-  const p = players[pid];
-  let queue = [{ r: p.row, c: p.col }];
-  let visited = new Set([`${p.row},${p.col}`]);
-  const dirs = [{dr: -1, dc: 0}, {dr: 1, dc: 0}, {dr: 0, dc: -1}, {dr: 0, dc: 1}];
-  
-  while (queue.length > 0) {
-    const {r, c} = queue.shift();
-    if (c === p.goalCol) return true;
-    for (const d of dirs) {
-      const nr = r + d.dr, nc = c + d.dc;
-      if (nr >= 0 && nr < boardSize && nc >= 0 && nc < boardSize && !visited.has(`${nr},${nc}`)) {
-        if (!isWallBlocking(r, c, nr, nc, walls)) {
-          visited.add(`${nr},${nc}`);
-          queue.push({ r: nr, c: nc });
-        }
-      }
-    }
-  }
-  return false;
-};
 
 // メッセージをJSX (spanタグ付き) で返すように変更し、ルビを適用
 const validateWall = (r, c, orientation, walls, boardSize, players) => {

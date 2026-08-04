@@ -7,7 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint . --max-warnings=0"
+    "lint": "eslint . --max-warnings=0",
+    "test": "node --test tests/*.test.mjs",
+    "icons": "node tools/build-icons.mjs",
+    "gate": "node scripts/check-project.mjs",
+    "gate:self-test": "node scripts/check-project.mjs --self-test",
+    "measure:ui": "node tools/measure-ui.mjs dist",
+    "measure:pwa": "node tools/measure-pwa.mjs dist",
+    "measure:a11y": "node tools/measure-a11y.mjs dist",
+    "measure:icons": "node tools/measure-icons.mjs dist",
+    "measure": "npm run measure:ui && npm run measure:pwa && npm run measure:a11y && npm run measure:icons",
+    "check": "npm run lint && npm run test && npm run build && npm run gate && npm run measure"
   },
   "dependencies": {
     "lucide-react": "^1.25.0",

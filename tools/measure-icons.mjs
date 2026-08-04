@@ -86,6 +86,32 @@ const run = async () => {
   console.log(JSON.stringify(result, null, 2));
   await browser.close();
   server.close();
+
+  // 判定。測っただけで通してしまうと、CI に置いた意味がない。
+  const problems = [];
+  for (const r of result) {
+    // iOS は透明部分を黒で埋める。四隅だけが黒く出る。
+    if (/apple-touch-icon/.test(r.file) && r.transparentPct > 0) {
+      problems.push(`${r.file}: 透明が ${r.transparentPct}% ある（iOS で四隅が黒くなる）`);
+    }
+    // 円で切り抜かれる。中央80%の円の外に絵の中身があると欠ける。
+    if (/maskable/.test(r.file)) {
+      if (r.transparentPct > 0) {
+        problems.push(`${r.file}: 透明が ${r.transparentPct}% ある（切り抜きの内側が抜ける）`);
+      }
+      if (r.outsideSafeZoneContentPct > 0.2) {
+        problems.push(`${r.file}: セーフゾーン外の中身が ${r.outsideSafeZoneContentPct}%（上限 0.2%）`);
+      }
+    }
+  }
+
+  console.error('\n== アイコン実測 ==');
+  if (problems.length === 0) {
+    console.error('✅ apple-touch-icon に透明なし / maskable のセーフゾーン外の中身 0.2% 以下');
+  } else {
+    for (const p of problems) console.error(`❌ ${p}`);
+  }
+  process.exit(problems.length === 0 ? 0 : 1);
 };
 
 run().catch((e) => { console.error(e); process.exit(2); });

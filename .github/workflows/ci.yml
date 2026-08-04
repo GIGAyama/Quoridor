@@ -1,5 +1,7 @@
 name: Build
 
+# pull_request でも動かす。push: branches: [main] だけだと
+# PR の時点で落ちていることに気づけない。
 on:
   push:
     branches: [main]
@@ -14,25 +16,78 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - name: Install dependencies
         run: npm ci
+
       - name: Lint
         run: npm run lint
+
+      - name: Test（ゲームの決まり）
+        run: npm test
+
       - name: Build
         run: npm run build
+
+      - name: 品質ゲート（GIGA Standard v5 Part I の静的検査）
+        run: npm run gate
+
+      # 「0件でした」だけでは、検査が動いているのか何も見ていないのか区別できない。
+      # わざと壊した写しを作って、対応する検査が落ちることを毎回確かめる。
+      - name: 品質ゲートの自己確認（わざと壊して落ちるか）
+        run: npm run gate:self-test
+
+      - name: Install Chromium（実測用）
+        run: npx playwright install --with-deps chromium
+
+      # 読むだけでは分からないもの（実際の色・実際の当たり判定・
+      # Service Worker の挙動・アイコンの画素）を実ブラウザで測る。
+      - name: 実測：表示（コントラスト・タップ領域・横スクロール・CSP違反・JSエラー）
+        run: npm run measure:ui
+
+      - name: 実測：PWA（登録・更新・圏外・他アプリのキャッシュ）
+        run: npm run measure:pwa
+
+      - name: 実測：キーボード操作とモーダル
+        run: npm run measure:a11y
+
+      - name: 実測：アイコン（透明・maskable のセーフゾーン）
+        run: npm run measure:icons
+
       - name: Verify PWA assets
         run: |
           test -f dist/index.html
+          test -f dist/offline.html
           test -f dist/manifest.webmanifest
           test -f dist/sw.js
+          test -f dist/install-hook.js
           test -f dist/favicon.png
           test -f dist/icons/icon-192.png
           test -f dist/icons/icon-512.png
           test -f dist/icons/maskable-192.png
           test -f dist/icons/maskable-512.png
           test -f dist/icons/apple-touch-icon.png
+      # ビルド成果物が先読みに埋まっていること。
+      # ここが空だと、はじめて開いた直後に圏外へ行った児童に白い画面が出る。
+      - name: Verify precache list
+        run: |
+          node -e '
+            const src = require("fs").readFileSync("dist/sw.js", "utf8");
+            const m = src.match(/const BUILD_ASSETS = (\[[^\]]*\]);/);
+            if (!m) throw new Error("sw.js に BUILD_ASSETS が埋め込まれていません");
+            const list = JSON.parse(m[1]);
+            const has = (ext) => list.some((f) => f.endsWith(ext));
+            if (!has(".js") || !has(".css")) {
+              throw new Error("先読みに js / css が入っていません: " + JSON.stringify(list));
+            }
+            if (list.some((f) => f.endsWith(".map"))) {
+              throw new Error("ソースマップを先読みに入れないこと: " + JSON.stringify(list));
+            }
+            console.log("先読み " + list.length + " 件: " + list.join(", "));
+          '
