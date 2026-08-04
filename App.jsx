@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Info, Play, AlertTriangle, XCircle, CheckCircle, Undo2, Settings2, Minus, Plus } from 'lucide-react';
+import { Info, Play, AlertTriangle, XCircle, CheckCircle, Undo2, Settings2, Minus, Plus, Download, Maximize2, Minimize2, RefreshCw, X } from 'lucide-react';
+import { applyUpdate } from './src/pwa.js';
 
 // ==========================================
 // 1. サウンドエンジン (Web Audio API)
@@ -88,9 +89,17 @@ const playSound = (type) => {
 // 2. ヘルパーコンポーネント & ロジック
 // ==========================================
 // ベースライン（文字の底辺）が揃うように最適化したルビコンポーネント
+//
+// ⚠️ rt に色を当ててはいけない。
+//    ここに text-gray-500 を決め打ちしていたため、青や赤のボタンの上に
+//    ふりがなが重なると比 1.07〜1.31 になり、ほとんど読めなかった。
+//    ふりがなが要るのは低学年の児童なので、いちばん読めなくて困る人が
+//    いちばん読めない形になっていた。
+//    色は styles.css の `ruby rt { color: inherit }` で親から継がせる。
+//    こうすると、どんな面の上でも本文と同じ比が保証される。
 const R = ({ t, r }) => (
   <ruby className="align-baseline" style={{ rubyPosition: 'over' }}>
-    {t}<rt className="text-[0.6em] text-gray-500 font-normal leading-none select-none pointer-events-none">{r}</rt>
+    {t}<rt className="text-[0.6em] font-normal leading-none select-none pointer-events-none">{r}</rt>
   </ruby>
 );
 
@@ -181,19 +190,19 @@ const PlayerPanel = ({ player, turn, winner, wallsLeft }) => {
   const isP1 = player === 1;
   return (
     <div className={`player-panel p-3 rounded-2xl border-2 transition-all duration-300 ${isTurn ? 'bg-white shadow-xl scale-105 ring-4' : 'bg-white/60 opacity-80 border-transparent'} ${isP1 ? (isTurn ? 'border-blue-400 ring-blue-300' : '') : (isTurn ? 'border-red-400 ring-red-300' : '')}`}>
-      <div className={`font-bold text-center text-lg ${isP1 ? 'text-blue-600' : 'text-red-600'}`}>
+      <div className={`panel-title font-bold text-center ${isP1 ? 'text-blue-600' : 'text-red-600'}`}>
         <span>{isP1 ? <R t="青" r="あお" /> : <R t="赤" r="あか" />}チーム</span>
       </div>
       <div className="flex items-center justify-center gap-3 my-2">
-        <span className="text-4xl filter drop-shadow-md">{isP1 ? '🔵' : '🔴'}</span>
+        <span className="panel-piece filter drop-shadow-md" aria-hidden="true">{isP1 ? '🔵' : '🔴'}</span>
         <div className="leading-none text-left">
           <div className="text-xs text-gray-500 mb-1 font-bold"><span>のこりカベ</span></div>
-          <div className="font-black text-4xl text-gray-800">
+          <div className="font-black fs-count text-gray-800">
             {wallsLeft[player]}<span className="text-sm font-normal ml-1 text-gray-500"><span><R t="枚" r="まい"/></span></span>
           </div>
         </div>
       </div>
-      <div className={`panel-hint mt-3 py-2 px-2 rounded-xl text-center font-bold text-sm text-white shadow-sm ${isP1 ? 'bg-blue-500' : 'bg-red-500'}`}>
+      <div className={`panel-hint mt-3 py-2 px-2 rounded-xl text-center font-bold text-sm text-white shadow-sm ${isP1 ? 'bg-blue-600' : 'bg-red-600'}`}>
         {isP1 ? <span><R t="右" r="みぎ"/>へ<R t="進" r="すす"/>め！ 👉</span> : <span>👈 <R t="左" r="ひだり"/>へ<R t="進" r="すす"/>め！</span>}
       </div>
     </div>
@@ -219,6 +228,68 @@ export default function App() {
   const [hoverCell, setHoverCell] = useState(null);
   const [history, setHistory] = useState([]);
   const [modal, setModal] = useState({ show: false });
+  const [presentation, setPresentation] = useState(false);
+  // すでにホーム画面から起動している端末には案内しない。
+  // 初期値で判定しておくと、描画のあとに setState する必要がなくなる。
+  const [installAvailable, setInstallAvailable] = useState(() => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+    return !standalone && !!window.__pwaInstallPrompt;
+  });
+  const [updateReady, setUpdateReady] = useState(false);
+
+  /*
+   * インストールの案内と、更新の案内。
+   *
+   * インストールボタンは「案内できるときだけ」出す。
+   * 出せないボタンを置いておくと「押しても何も起きない」と言われる。
+   * 合図（beforeinstallprompt）は install-hook.js が <head> の先頭で受け取っている。
+   */
+  useEffect(() => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+
+    const onAvailable = () => { if (!standalone) setInstallAvailable(true); };
+    const onInstalled = () => setInstallAvailable(false);
+    const onUpdate = () => setUpdateReady(true);
+
+    window.addEventListener('pwa-install-available', onAvailable);
+    window.addEventListener('pwa-installed', onInstalled);
+    window.addEventListener('pwa-update-ready', onUpdate);
+    return () => {
+      window.removeEventListener('pwa-install-available', onAvailable);
+      window.removeEventListener('pwa-installed', onInstalled);
+      window.removeEventListener('pwa-update-ready', onUpdate);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    const prompt = window.__pwaInstallPrompt;
+    if (!prompt) return;
+    window.__pwaInstallPrompt = null;
+    setInstallAvailable(false);
+    prompt.prompt();
+    await prompt.userChoice;
+  };
+
+  // 提示モード（電子黒板・大型提示装置）。
+  // 4K を 65〜75インチで教室の後ろから見ると、通常サイズの文字は読めない。
+  // 文字の大きさは CSS 変数を .presentation でまとめて上書きしている。
+  useEffect(() => {
+    document.body.classList.toggle('presentation', presentation);
+    return () => document.body.classList.remove('presentation');
+  }, [presentation]);
+
+  const togglePresentation = () => {
+    const next = !presentation;
+    setPresentation(next);
+    // 全画面にできる端末では合わせて切り替える（できなくても提示モード自体は効く）
+    if (next && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else if (!next && document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
 
   const handleBoardSizeChange = (size) => {
     setBoardSize(size);
@@ -401,7 +472,7 @@ export default function App() {
 
   return (
     <div 
-      className="min-h-screen flex flex-col font-sans text-gray-800 selection:bg-yellow-300 overscroll-none"
+      className="app-shell flex flex-col font-sans text-gray-800 selection:bg-yellow-300 overscroll-none"
       style={{
         backgroundColor: '#fff9c4',
         backgroundImage: 'radial-gradient(#ffe082 20%, transparent 20%), radial-gradient(#ffe082 20%, transparent 20%)',
@@ -409,7 +480,7 @@ export default function App() {
       }}
     >
       <nav className="bg-white/90 backdrop-blur shadow-sm sticky top-0 z-40 border-b-4 border-yellow-300 px-4 py-3 flex justify-between items-center">
-        <div className="font-black text-xl text-blue-600 flex items-center gap-2">
+        <div className="font-black fs-nav text-blue-600 flex items-center gap-2">
           <span>🚧 カベ<R t="合戦" r="がっせん"/>！</span>
         </div>
         <div className="flex gap-2">
@@ -427,10 +498,30 @@ export default function App() {
               <Undo2 size={18} /> <span className="text-sm hidden sm:inline"><span><R t="待" r="ま"/>った！</span></span>
             </button>
           )}
+          {installAvailable && (
+            <button
+              onClick={handleInstall}
+              aria-label="このアプリを端末にインストールする"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full font-bold border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 active:scale-95 transition-all"
+            >
+              <Download size={18} aria-hidden="true" />
+              <span className="text-sm hidden sm:inline">アプリにする</span>
+            </button>
+          )}
+          <button
+            onClick={togglePresentation}
+            aria-label={presentation ? '大きく表示をやめる' : '大きく表示する（電子黒板むけ）'}
+            aria-pressed={presentation}
+            className={`w-11 h-11 rounded-full border-2 flex items-center justify-center transition-transform active:scale-90 ${
+              presentation ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-gray-400 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {presentation ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}
+          </button>
           <button
             onClick={showRules}
             aria-label="あそびかたを見る"
-            className="w-10 h-10 rounded-full border-2 border-blue-500 text-blue-600 flex items-center justify-center hover:bg-blue-50 active:scale-90 transition-transform font-bold"
+            className="w-11 h-11 rounded-full border-2 border-blue-600 text-blue-700 flex items-center justify-center hover:bg-blue-50 active:scale-90 transition-transform font-bold"
           >？</button>
         </div>
       </nav>
@@ -439,7 +530,7 @@ export default function App() {
         {screen === 'setup' ? (
           <div className="flex-grow flex items-center justify-center p-4">
             <div className="bg-white/95 backdrop-blur-sm p-6 sm:p-8 rounded-3xl shadow-xl w-full max-w-md text-center border-4 border-white">
-              <h1 className="text-3xl font-black text-blue-600 mb-2 animate-pulse"><span><R t="道" r="みち"/>を<R t="切" r="き"/>り<R t="拓" r="ひら"/>け！</span></h1>
+              <h1 className="fs-title font-black text-blue-600 mb-2 animate-pulse"><span><R t="道" r="みち"/>を<R t="切" r="き"/>り<R t="拓" r="ひら"/>け！</span></h1>
               <p className="text-gray-500 mb-6 font-medium"><span><R t="相手" r="あいて"/>のゴールを<R t="目指" r="めざ"/>す<R t="対戦" r="たいせん"/>パズル</span></p>
               
               <div className="bg-gray-50 p-4 rounded-2xl mb-4 text-left border border-gray-100">
@@ -492,7 +583,7 @@ export default function App() {
             <div className="board-column w-full flex-shrink-0 order-1 wide:order-2">
               <div className="turn-banner text-center mb-4 h-10">
                 {!winner && (
-                  <div className={`inline-block px-6 py-2 rounded-full font-bold shadow-sm border-2 transition-colors ${turn === 1 ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-red-50 text-red-700 border-red-300'}`}>
+                  <div className={`inline-block px-6 py-2 rounded-full fs-turn font-bold shadow-sm border-2 transition-colors ${turn === 1 ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-red-50 text-red-700 border-red-300'}`}>
                     {turn === 1 ? <span><R t="青" r="あお"/>チームの<R t="番" r="ばん"/>です</span> : <span><R t="赤" r="あか"/>チームの<R t="番" r="ばん"/>です</span>}
                   </div>
                 )}
@@ -508,11 +599,11 @@ export default function App() {
                       const c = i % boardSize;
                       const isHighlighted = validMoveSet.has(`${r},${c}`);
                       return (
-                        <div key={i} className="rounded-lg bg-[#f1f3f4] hover:bg-[#e3f2fd] transition-colors cursor-pointer flex items-center justify-center relative"
+                        <div key={i} className="board-cell rounded-lg bg-[#f1f3f4] hover:bg-[#e3f2fd] transition-colors cursor-pointer flex items-center justify-center relative"
                           onMouseEnter={mode === 'wall' ? () => setHoverCell({r, c}) : undefined}
                           onClick={() => handleCellClick(r, c)}
                         >
-                          {isHighlighted && <div className="w-1/3 h-1/3 rounded-full bg-green-500/50 pointer-events-none animate-pulse" />}
+                          {isHighlighted && <div className="board-cell-hint w-1/3 h-1/3 rounded-full bg-green-600/60 pointer-events-none animate-pulse" />}
                         </div>
                       );
                     })}
@@ -522,21 +613,21 @@ export default function App() {
                     className="absolute z-10 flex items-center justify-center text-xl sm:text-3xl filter drop-shadow-md"
                     style={{ ...getPositionStyle(players[1].row, players[1].col), transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
                   >
-                    <div className="w-[80%] h-[80%] rounded-full bg-gradient-to-br from-blue-300 to-blue-600 border-[3px] border-white shadow-lg flex items-center justify-center">🔵</div>
+                    <div className="pawn-piece w-[80%] h-[80%] rounded-full bg-gradient-to-br from-blue-300 to-blue-600 border-[3px] border-white shadow-lg flex items-center justify-center">🔵</div>
                   </div>
                   <div 
                     className="absolute z-10 flex items-center justify-center text-xl sm:text-3xl filter drop-shadow-md"
                     style={{ ...getPositionStyle(players[2].row, players[2].col), transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
                   >
-                    <div className="w-[80%] h-[80%] rounded-full bg-gradient-to-br from-red-300 to-red-600 border-[3px] border-white shadow-lg flex items-center justify-center">🔴</div>
+                    <div className="pawn-piece w-[80%] h-[80%] rounded-full bg-gradient-to-br from-red-300 to-red-600 border-[3px] border-white shadow-lg flex items-center justify-center">🔴</div>
                   </div>
 
                   {walls.map((w, i) => {
                     const style = getPositionStyle(w.row, w.col);
                     const wallStyle = { backgroundColor: '#8d6e63', backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.1), rgba(255,255,255,0.1) 5px, transparent 5px, transparent 10px)' };
                     return w.orientation === 'h' 
-                      ? <div key={`w-${i}`} className="absolute z-20 shadow-md border border-white/20 rounded-sm" style={{ ...wallStyle, left: style.left, top: `calc(${style.top} + ${style.height} + ${GAP/2}px - 4px)`, width: `calc(${style.width} * 2 + ${GAP}px)`, height: '8px' }} />
-                      : <div key={`w-${i}`} className="absolute z-20 shadow-md border border-white/20 rounded-sm" style={{ ...wallStyle, left: `calc(${style.left} + ${style.width} + ${GAP/2}px - 4px)`, top: style.top, height: `calc(${style.height} * 2 + ${GAP}px)`, width: '8px' }} />;
+                      ? <div key={`w-${i}`} className="wall-piece absolute z-20 shadow-md border border-white/20 rounded-sm" style={{ ...wallStyle, left: style.left, top: `calc(${style.top} + ${style.height} + ${GAP/2}px - 4px)`, width: `calc(${style.width} * 2 + ${GAP}px)`, height: '8px' }} />
+                      : <div key={`w-${i}`} className="wall-piece absolute z-20 shadow-md border border-white/20 rounded-sm" style={{ ...wallStyle, left: `calc(${style.left} + ${style.width} + ${GAP/2}px - 4px)`, top: style.top, height: `calc(${style.height} * 2 + ${GAP}px)`, width: '8px' }} />;
                   })}
 
                   {mode === 'wall' && hoverCell && !winner && (() => {
@@ -544,8 +635,8 @@ export default function App() {
                     const style = getPositionStyle(hoverCell.r, hoverCell.c);
                     const color = previewError ? '#ef4444' : '#fbbf24';
                     return wallOrientation === 'h'
-                      ? <div className="absolute z-30 border-2 border-dashed pointer-events-none opacity-90 rounded-sm" style={{ left: style.left, top: `calc(${style.top} + ${style.height} + ${GAP/2}px - 4px)`, width: `calc(${style.width} * 2 + ${GAP}px)`, height: '8px', backgroundColor: color, borderColor: previewError ? 'white' : '#78350f' }} />
-                      : <div className="absolute z-30 border-2 border-dashed pointer-events-none opacity-90 rounded-sm" style={{ left: `calc(${style.left} + ${style.width} + ${GAP/2}px - 4px)`, top: style.top, height: `calc(${style.height} * 2 + ${GAP}px)`, width: '8px', backgroundColor: color, borderColor: previewError ? 'white' : '#78350f' }} />;
+                      ? <div className="wall-preview absolute z-30 border-2 border-dashed pointer-events-none opacity-90 rounded-sm" style={{ left: style.left, top: `calc(${style.top} + ${style.height} + ${GAP/2}px - 4px)`, width: `calc(${style.width} * 2 + ${GAP}px)`, height: '8px', backgroundColor: color, borderColor: previewError ? 'white' : '#78350f' }} />
+                      : <div className="wall-preview absolute z-30 border-2 border-dashed pointer-events-none opacity-90 rounded-sm" style={{ left: `calc(${style.left} + ${style.width} + ${GAP/2}px - 4px)`, top: style.top, height: `calc(${style.height} * 2 + ${GAP}px)`, width: '8px', backgroundColor: color, borderColor: previewError ? 'white' : '#78350f' }} />;
                   })()}
 
                 </div>
@@ -561,29 +652,56 @@ export default function App() {
         )}
       </main>
 
+      {/*
+        あたらしい版が待機していることの案内。
+        押されるまで切り替えない（対戦の途中で盤面が消えないようにするため）。
+        あとから足した固定要素なので .no-print も付けておく。
+      */}
+      {updateReady && (
+        <div className={`update-toast no-print fixed left-1/2 -translate-x-1/2 z-50 w-[min(28rem,calc(100%-1.5rem))] bg-white border-2 border-indigo-600 rounded-2xl shadow-2xl p-3 flex items-center gap-2 ${screen === 'game' && !winner ? 'above-controls' : ''}`} role="status">
+          <RefreshCw size={20} className="text-indigo-700 flex-shrink-0" aria-hidden="true" />
+          <span className="flex-1 text-sm font-bold text-gray-800">
+            あたらしい ばんが あります
+          </span>
+          <button
+            onClick={() => { setUpdateReady(false); applyUpdate(); }}
+            className="px-3 py-2 rounded-full bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-sm"
+          >
+            さいしんに する
+          </button>
+          <button
+            onClick={() => setUpdateReady(false)}
+            aria-label="あとにする"
+            className="w-11 h-11 rounded-full text-gray-600 hover:bg-gray-100 flex items-center justify-center flex-shrink-0"
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
       {/* フッター */}
-      <footer className="text-center text-gray-500 py-3 mt-auto border-t border-yellow-300/50 bg-white/40 backdrop-blur-sm">
-        <small>© 2026 カベカベ合戦！ <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="no-underline text-gray-500 hover:text-gray-700 transition-colors">GIGA山</a></small>
+      <footer className="text-center text-gray-600 py-3 mt-auto border-t border-yellow-300/50 bg-white/40 backdrop-blur-sm">
+        <small>© 2026 カベカベ合戦！ <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="tap-44 no-underline text-gray-600 hover:text-gray-800 transition-colors">GIGA山</a></small>
       </footer>
 
       {screen === 'game' && !winner && (
         <div className="controls-bar fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-gray-200 p-3 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-40 pb-safe">
           <div className="controls-inner max-w-3xl mx-auto flex gap-3 h-16">
-            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} onClick={() => { setMode('move'); setHoverCell(null); }}>
+            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => { setMode('move'); setHoverCell(null); }}>
               <span className="text-2xl leading-none mb-1">🏃</span><span className="text-[10px] tracking-wider"><span><R t="歩" r="ある"/>く</span></span>
             </button>
-            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'wall' ? 'bg-amber-400 text-amber-900 shadow-lg shadow-amber-400/40 scale-105' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} onClick={() => setMode('wall')}>
+            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'wall' ? 'bg-amber-400 text-amber-900 shadow-lg shadow-amber-400/40 scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setMode('wall')}>
               <span className="text-2xl leading-none mb-1">🚧</span><span className="text-[10px] tracking-wider">カベ</span>
             </button>
             <div className="flex-[1.2] flex items-center justify-center">
               {mode === 'move' ? (
-                <div className="w-full h-full bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center text-sm font-bold text-gray-400 text-center leading-tight">
+                <div className="w-full h-full bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300 flex items-center justify-center text-sm font-bold text-gray-600 text-center leading-tight">
                   <span><R t="光" r="ひか"/>るマスを<br/>タップ！</span>
                 </div>
               ) : (
                 <button onClick={() => setWallOrientation(o => o === 'v' ? 'h' : 'v')} className="w-full h-full bg-yellow-50 hover:bg-yellow-100 border-2 border-amber-300 rounded-2xl font-bold text-amber-900 flex flex-col items-center justify-center transition-all active:scale-95">
                   <span className="text-sm"><span><R t="今" r="いま"/>は <b className="text-base">{wallOrientation === 'v' ? 'タテ' : 'ヨコ'}</b></span></span>
-                  <span className="text-[10px] text-amber-600 opacity-80 mt-0.5"><span><R t="押" r="お"/>すと{wallOrientation === 'v' ? 'ヨコ' : 'タテ'}</span></span>
+                  <span className="text-[10px] text-amber-700 mt-0.5"><span><R t="押" r="お"/>すと{wallOrientation === 'v' ? 'ヨコ' : 'タテ'}</span></span>
                 </button>
               )}
             </div>
@@ -594,17 +712,17 @@ export default function App() {
       {modal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl scale-100 transition-transform">
-            <div className={`flex justify-center mb-4 ${modal.type === 'success' ? 'text-green-500' : modal.type === 'error' ? 'text-red-500' : modal.type === 'warning' ? 'text-amber-500' : 'text-blue-500'}`}>
+            <div className={`flex justify-center mb-4 ${modal.type === 'success' ? 'text-green-700' : modal.type === 'error' ? 'text-red-600' : modal.type === 'warning' ? 'text-amber-700' : 'text-blue-600'}`}>
               {modal.type === 'success' ? <CheckCircle size={56} strokeWidth={2.5} /> : modal.type === 'error' ? <XCircle size={56} strokeWidth={2.5} /> : modal.type === 'warning' ? <AlertTriangle size={56} strokeWidth={2.5} /> : <Info size={56} strokeWidth={2.5} />}
             </div>
             <h3 className="text-2xl font-black text-center mb-3 text-gray-800"><span>{modal.title}</span></h3>
             <div className="text-center text-gray-600 mb-6 font-medium leading-relaxed">{modal.content}</div>
             {modal.onConfirm && (
-              <button onClick={() => { modal.onConfirm(); setModal(m => ({ ...m, show: false })); }} className={`w-full py-3.5 rounded-full font-bold text-lg text-white shadow-md active:scale-95 transition-all ${modal.type === 'success' ? 'bg-green-500 hover:bg-green-600' : modal.type === 'error' ? 'bg-red-500 hover:bg-red-600' : modal.type === 'warning' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-500 hover:bg-blue-600'}`}>
+              <button onClick={() => { modal.onConfirm(); setModal(m => ({ ...m, show: false })); }} className={`w-full py-3.5 rounded-full font-bold text-lg text-white shadow-md active:scale-95 transition-all ${modal.type === 'success' ? 'bg-green-700 hover:bg-green-800' : modal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : modal.type === 'warning' ? 'bg-amber-700 hover:bg-amber-800' : 'bg-blue-600 hover:bg-blue-700'}`}>
                 {modal.confirmText}
               </button>
             )}
-            {!modal.onConfirm && !modal.timer && <button onClick={() => setModal(m => ({ ...m, show: false }))} className="w-full py-2 rounded-full font-bold text-gray-500 bg-gray-100 hover:bg-gray-200"><span><R t="閉" r="と"/>じる</span></button>}
+            {!modal.onConfirm && !modal.timer && <button onClick={() => setModal(m => ({ ...m, show: false }))} className="w-full py-2 rounded-full font-bold text-gray-600 bg-gray-100 hover:bg-gray-200"><span><R t="閉" r="と"/>じる</span></button>}
           </div>
         </div>
       )}
