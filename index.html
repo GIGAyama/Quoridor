@@ -55,10 +55,75 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>カベカベ合戦！</title>
+
+    <!--
+      本体が1行も動かなかったときに、真っ白ではなく読める案内を出すための控え。
+
+      なぜ JavaScript で書かないか：
+        boot-check.js も本体も、読み込めなければ動かない。
+        実際に、配信の設定を誤ってビルド結果ではなくソースが配られたとき、
+        js は1つも読み込めず、画面には何も出なかった（真っ白）。
+        そういう場面でも必ず出したいので、HTML と CSS だけで組む。
+
+      なぜ 10 秒あとに出すか：
+        校内 Wi-Fi が遅いだけの端末に「よみこめませんでした」と出さないため。
+        animation-delay は prefers-reduced-motion の一括上書き
+        （animation-duration だけを潰す）では消えないので、ここでも効く。
+
+      本体が描けたら、React が #root の中身ごと置きかえるので自然に消える。
+    -->
+    <style>
+      #boot-fallback {
+        opacity: 0;
+        animation: boot-fallback-in 1ms linear 10s forwards;
+        /* 100vh 単独はモバイルのアドレスバー分はみ出す。dvh を使い、無い端末には vh を回す */
+        min-height: 100vh;
+        min-height: 100dvh;
+      }
+      @keyframes boot-fallback-in { to { opacity: 1; } }
+    </style>
   </head>
-  <body>
+  <body style="margin: 0; background: #fff9c4">
     <noscript>このアプリを遊ぶにはJavaScriptを有効にしてください。</noscript>
-    <div id="root"></div>
+    <div id="root">
+      <div
+        id="boot-fallback"
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          box-sizing: border-box;
+          font-family: ui-rounded, 'Hiragino Maru Gothic ProN', system-ui, sans-serif;
+          color: #1f2937;
+        "
+      >
+        <div
+          style="
+            max-width: 520px;
+            width: 100%;
+            background: #fff;
+            border-radius: 20px;
+            padding: 28px 24px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+            text-align: center;
+          "
+        >
+          <div style="font-size: 56px; line-height: 1">🚧</div>
+          <h1 style="font-size: 24px; margin: 12px 0">アプリを よみこめませんでした</h1>
+          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 20px">
+            もういちど ひらいてみてください。
+          </p>
+          <p style="font-size: 13px; line-height: 1.7; margin: 0; color: #6b7280">
+            先生へ：直らないときは、アドレスの うしろに
+            <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px">?fix=1</code>
+            を付けて開いてください。<br />
+            それでも この画面のままなら、配信の設定（GitHub Pages のソース）が
+            <strong>GitHub Actions</strong> になっているか確認してください。
+          </p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -35,9 +35,21 @@
     if (notes.length < 8 && notes.indexOf(text) < 0) notes.push(text);
   };
 
+  /*
+   * 本体が描けたかどうか。
+   *
+   * ⚠️ 「#root に子がいるか」だけで見てはいけない。
+   *    index.html には、js が1つも動かなかったときのための控え
+   *    （#boot-fallback）が最初から置いてある。これを本体と数えると、
+   *    本体が落ちていても「描けている」と判定してしまい、番人が出なくなる。
+   *    本体が描けたときは React が #root の中身ごと置きかえる。
+   */
   var mounted = function () {
     var root = document.getElementById('root');
-    return !!root && root.childElementCount > 0;
+    if (!root || root.childElementCount === 0) return false;
+    return !(root.childElementCount === 1
+      && root.firstElementChild
+      && root.firstElementChild.id === 'boot-fallback');
   };
 
   var schedule = function (ms) {
@@ -119,6 +131,10 @@
 
   var show = function () {
     shown = true;
+    // 控え（HTML だけの案内）より、こちらのほうが直す手立てがあるぶん役に立つ。
+    // 二重に見えないよう、控えは引っ込める。
+    var fallback = document.getElementById('boot-fallback');
+    if (fallback) fallback.setAttribute('style', 'display:none');
     var box = el('div', 'position:fixed;inset:0;z-index:99999;overflow:auto;'
       + 'background:#fff9c4;color:#1f2937;display:flex;align-items:center;justify-content:center;'
       + 'padding:24px;font-family:ui-rounded,"Hiragino Maru Gothic ProN",system-ui,sans-serif;');

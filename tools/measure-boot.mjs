@@ -13,6 +13,7 @@
  * 遅い校内 Wi-Fi でつながるのを待っている児童に「こわれた」と思わせるため、
  * 出ないことのほうが重要である。
  */
+import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { serveDir } from './measure-lib.mjs';
 
@@ -170,6 +171,52 @@ breakBundle = false;
     '遮断ページを本体として焼き付けない', JSON.stringify(text.slice(0, 40)));
   await ctx.close();
   await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
+}
+
+// ---- 6) 配信の設定を誤っても真っ白にしない ---------------------------------
+/*
+ * 実際に起きた事故の再現。
+ *
+ * GitHub Pages の配信元がビルド結果ではなくリポジトリのソースになっていると、
+ * 配られる index.html はソースのままになる。ソースは /src/main.jsx のように
+ * 絶対パスで本体を指しており、そのファイルは配信物に無いので js は1つも動かない。
+ * このとき画面には何も出ず、児童からは真っ白にしか見えない。
+ * 直しかたの案内（boot-check.js）も一緒に 404 になるため、番人も出ない。
+ *
+ * そこで index.html だけで完結する控えを置いてある。ここではソースの側を
+ * そのまま配ってみて、10 秒後に読める案内が出ることを確かめる。
+ */
+{
+  const srcServer = await serveDir(resolve('.'), PORT + 1);
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT + 1}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(12000);
+
+  const text = await page.evaluate(() => document.body.innerText);
+  check(text.includes('よみこめませんでした'), 'ソースを誤って配っても真っ白にならない',
+    JSON.stringify(text.slice(0, 30)));
+  check(text.includes('?fix=1') && text.includes('GitHub Actions'),
+    '先生への直しかたが出ている');
+  await ctx.close();
+  srcServer.close();
+}
+
+// ---- 7) 正常なときに、控えがちらつかない -----------------------------------
+{
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  // 本体が描けるまで待ち、控えが消えていること（＝案内が出ないこと）を見る
+  await page.waitForFunction(() => {
+    const r = document.getElementById('root');
+    return r && r.childElementCount > 0 && !document.getElementById('boot-fallback');
+  }, { timeout: 10000 }).catch(() => {});
+  check(await page.locator('#boot-fallback').count() === 0, '本体が描けたら控えは消える');
+  await page.waitForTimeout(11000);
+  check(!(await page.evaluate(() => document.body.innerText)).includes('よみこめませんでした'),
+    '正常なときは 10 秒後も案内が出ない');
+  await ctx.close();
 }
 
 await browser.close();
