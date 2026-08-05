@@ -107,7 +107,36 @@ breakBundle = false;
   await ctx.close();
 }
 
-// ---- 4) 遮断ページを本体として焼き付けない ---------------------------------
+// ---- 4) ?fix=1 で、画面を待たずに直せる ------------------------------------
+/*
+ * 先生が配れる「直すためのアドレス」。番人が出るのを待たずに直せること、
+ * そして直したあと ?fix=1 が外れて（＝繰り返しにならず）本体が起動することを見る。
+ */
+{
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  await page.evaluate(async () => {
+    await (await caches.open('kabe-kabe-test')).put('/x', new Response('x'));
+    await (await caches.open('qalc-v2')).put('/y', new Response('y'));
+  });
+
+  await page.goto(`${BASE}?fix=1`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(4000);
+
+  const keys = await page.evaluate(() => caches.keys());
+  // 直したあとは本体が起動し、Service Worker を登録し直して
+  // 今の版のキャッシュ（kabe-kabe-v5）を作る。これは正しい。
+  // 見るべきは「古いものが消えたか」なので、置いた目印が消えたことで確かめる。
+  check(!keys.includes('kabe-kabe-test'), '?fix=1 で自アプリの古いキャッシュを消した', JSON.stringify(keys));
+  check(keys.includes('qalc-v2'), '?fix=1 でも他アプリのキャッシュは残した', JSON.stringify(keys));
+  check(!page.url().includes('fix=1'), '?fix=1 が外れている（繰り返しにならない）', page.url());
+  check((await page.evaluate(() => document.body.innerText)).includes('カベ'), '直したあと本体が起動する');
+  await ctx.close();
+}
+
+// ---- 5) 遮断ページを本体として焼き付けない ---------------------------------
 /*
  * fetch は 404 でもフィルタの遮断ページでも「成功」として返る。
  * response.ok を見ずにキャッシュへ入れると、そのページが index.html として残り、

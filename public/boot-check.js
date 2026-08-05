@@ -60,15 +60,29 @@
     note('エラー: ' + ((e.reason && e.reason.message) || e.reason));
   });
 
-  var repair = function (button) {
-    button.disabled = true;
-    button.textContent = 'なおしています…';
+  /*
+   * 直したあとに開き直すアドレスを作る。
+   *
+   * ⚠️ fix は必ず外すこと。付けたまま開き直すと、また直しにいって終わらなくなる。
+   * ⚠️ r（時刻）を足すのは、同じものがキャッシュから返ってくると
+   *    直ったのかどうか分からなくなるため。
+   */
+  var cleanUrl = function () {
+    var parts = location.href.split('#')[0].split('?');
+    var query = (parts[1] || '').split('&').filter(function (kv) {
+      return kv && kv.split('=')[0] !== 'fix' && kv.split('=')[0] !== 'r';
+    });
+    query.push('r=' + Date.now());
+    return parts[0] + '?' + query.join('&');
+  };
 
-    var done = function () {
-      // キャッシュを避けて読み直す。同じものが返ってくると直ったか分からない。
-      var url = location.href.split('#')[0];
-      location.replace(url + (url.indexOf('?') < 0 ? '?' : '&') + 'r=' + Date.now());
-    };
+  var repair = function (button) {
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'なおしています…';
+    }
+
+    var done = function () { location.replace(cleanUrl()); };
 
     var jobs = [];
 
@@ -164,5 +178,18 @@
     schedule(1000);           // 本体が後から立ち上がったら消すために見続ける
   }
 
-  schedule(GRACE_MS);
+  /*
+   * 先生が配れる「直すためのアドレス」。末尾に ?fix=1 を付けて開くと、
+   * 画面を待たずにその場で直して開き直す。
+   *
+   * 画面のボタンは、番人が出て初めて押せる。しかし本体が中途半端に描けている
+   * 端末（画面は出るが動かない等）では番人が出ないため、押す手立てが無い。
+   * 一斉に配れる形が要る、というのが足した理由である。
+   */
+  if (location.search.indexOf('fix=1') >= 0) {
+    if (document.body) repair(null);
+    else window.addEventListener('DOMContentLoaded', function () { repair(null); });
+  } else {
+    schedule(GRACE_MS);
+  }
 })();
