@@ -60,6 +60,11 @@ jobs:
       - name: 実測：アイコン（透明・maskable のセーフゾーン）
         run: npm run measure:icons
 
+      # 本体が動かなかったとき（＝真っ白のとき）に、画面から自力で直せること。
+      # わざと本体の js を 404 にして再現している。
+      - name: 実測：真っ白からの復帰
+        run: npm run measure:boot
+
       - name: Verify PWA assets
         run: |
           test -f dist/index.html
@@ -67,6 +72,7 @@ jobs:
           test -f dist/manifest.webmanifest
           test -f dist/sw.js
           test -f dist/install-hook.js
+          test -f dist/boot-check.js
           test -f dist/favicon.png
           test -f dist/icons/icon-192.png
           test -f dist/icons/icon-512.png
