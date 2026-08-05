@@ -3,7 +3,13 @@
 @tailwind utilities;
 
 :root {
-  font-family: ui-rounded, "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  /*
+   * 学校のフィルタリングで Web フォントが届かないことがあるため、
+   * 外部フォントには一切頼らず端末側のフォントだけを並べる。
+   * 児童が字形を見る場面が無い（漢字はすべてふりがな付きの本文）ので教科書体は要求しない。
+   */
+  font-family: ui-rounded, "Hiragino Maru Gothic ProN", "Zen Maru Gothic", "Yu Gothic UI",
+    "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
   color-scheme: light;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -11,6 +17,68 @@
   --app-header-height: 68px;
   --app-controls-height: 88px;
   --board-chrome: 8.5rem;
+
+  /*
+   * 児童が見る「主役」の文字だけ、画面幅に追従させる（fluid type）。
+   * Tailwind の text-4xl のような固定サイズは、320px のスマホではみ出し、
+   * 電子黒板では小さすぎる。メディアクエリを何段も書く代わりに clamp() で一本化する。
+   */
+  --fs-title: clamp(20px, 3.4vw + 11px, 34px);   /* せってい画面の見出し */
+  --fs-nav: clamp(16px, 1.8vw + 10px, 22px);     /* アプリ名 */
+  --fs-turn: clamp(14px, 1.6vw + 9px, 20px);     /* いま誰の番か */
+  --fs-count: clamp(26px, 5.4vw, 40px);          /* のこりカベの枚数 */
+  --fs-panel-title: clamp(15px, 1.5vw + 10px, 20px);
+  --fs-panel-hint: clamp(11px, 1.4vw + 6px, 15px);
+}
+
+.fs-title { font-size: var(--fs-title); }
+.fs-nav { font-size: var(--fs-nav); }
+.fs-turn { font-size: var(--fs-turn); }
+.fs-count { font-size: var(--fs-count); }
+.panel-title { font-size: var(--fs-panel-title); }
+.panel-hint { font-size: var(--fs-panel-hint); }
+.panel-piece { font-size: clamp(24px, 5vw, 36px); line-height: 1; }
+
+/*
+ * 画面いっぱいの高さは 100vh ではなく 100dvh。
+ * 100vh はモバイルのアドレスバー分だけはみ出し、下部の操作バーが画面外へ落ちる。
+ */
+.app-shell {
+  min-height: 100dvh;
+  /*
+   * 横向きにしたときノッチ側が欠けるのを防ぐ。
+   * 画面に固定している要素（下部の操作バー）は position: fixed で
+   * ビューポート基準に配置されるため、ここでは効かない。あちらは個別に見ている。
+   */
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+@supports not (height: 100dvh) {
+  .app-shell {
+    min-height: 100vh;
+  }
+}
+
+/*
+ * タップ領域 44px は、ボタンを大きくして満たすと詰まった並びが折り返して別の破綻を生む。
+ * 見た目の大きさは変えず、疑似要素で当たり判定だけを広げる。
+ */
+.tap-44 {
+  position: relative;
+  display: inline-block;
+}
+
+.tap-44::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 * {
@@ -33,11 +101,16 @@ html {
 }
 
 body {
-  min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+@supports not (height: 100dvh) {
+  body {
+    min-height: 100vh;
+  }
 }
 
 button,
@@ -51,9 +124,20 @@ button {
 }
 
 button:focus-visible,
-select:focus-visible {
+select:focus-visible,
+a:focus-visible {
   outline: 3px solid #1d4ed8;
   outline-offset: 3px;
+}
+
+/*
+ * キーボードで盤面を歩くとき、いまどのマスに居るかが見えないと操作できない。
+ * マスは隙間 4px で並んでいるので、外向きの outline だと隣に重なる。内側へ寄せる。
+ */
+.board-cell:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: -3px;
+  z-index: 5;
 }
 
 .pb-safe {
@@ -80,10 +164,11 @@ select:focus-visible {
     --board-chrome: 8rem;
   }
 
+  /* 左右のノッチは .app-shell 側で見ているので、ここでは上端だけ足す */
   nav {
     padding-top: max(0.5rem, env(safe-area-inset-top)) !important;
-    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
-    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
   }
 
   main {
@@ -93,6 +178,152 @@ select:focus-visible {
 
   ruby rt {
     font-size: 0.5em;
+  }
+}
+
+/*
+ * ふりがなの色は「決め打ちしない」。
+ *
+ * 1か所ずつ潰そうとすると必ず漏れる（このアプリでは青ボタン・赤ボタン・
+ * 緑のボタン・手番バナーの4箇所で同時に起きていた）。
+ * 親の色をそのまま継がせれば、どんな面の上でも本文と同じコントラストになる。
+ * ふりがなと本文の区別は、色ではなく大きさ（0.6em）で付ける。
+ */
+ruby rt {
+  color: inherit;
+}
+
+/*
+ * 設計下限（320px）でプレイヤーパネル2枚が収まらず、横スクロールが 14px 出ていた。
+ * 原因は帯の「みぎへすすめ！」がパネルの最小幅を押し広げていたこと。
+ *
+ * ボタンを小さくするのではなく、
+ *   ・flex の子が内容より縮めるようにする（min-width: 0）
+ *   ・狭いときだけ余白と帯の字を詰める
+ * の2点で収める。文字サイズ自体は clamp() が面倒を見る。
+ */
+.panel-row > * {
+  min-width: 0;
+}
+
+/*
+ * 更新の案内は、下部の操作バーの上に重ねる。
+ * 操作バーが出ていない画面（せってい・勝負あり）では下端に寄せる。
+ */
+.update-toast {
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+.update-toast.above-controls {
+  bottom: calc(var(--app-controls-height) + 1rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* 横向きの狭い画面では操作バーが右側の縦バーになるので、下端でよい */
+@media (max-height: 700px) and (orientation: landscape) {
+  .update-toast.above-controls {
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    width: min(24rem, calc(100% - var(--app-controls-width, 150px) - 2rem));
+    left: calc((100% - var(--app-controls-width, 150px)) / 2);
+  }
+}
+
+@media (max-width: 400px) {
+  .game-layout {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+
+  .panel-row {
+    gap: 0.375rem;
+  }
+
+  .player-panel {
+    padding: 0.5rem;
+  }
+
+  .panel-hint {
+    padding-left: 0.125rem;
+    padding-right: 0.125rem;
+    white-space: nowrap;
+  }
+}
+
+/*
+ * ハイコントラストモード（Windows のコントラストテーマなど）。
+ * 背景色がすべて無効化されるため、色だけで描いている盤面の要素が消える。
+ * ・ボタンは枠線で「押せる」と分かるようにする
+ * ・盤面のマス・カベ・コマは、消えると遊べなくなるので色を保持する
+ */
+@media (forced-colors: active) {
+  button,
+  select {
+    border: 2px solid ButtonText;
+  }
+
+  .board-cell {
+    border: 1px solid CanvasText;
+  }
+
+  .board-cell-hint,
+  .wall-piece,
+  .wall-preview,
+  .pawn-piece {
+    forced-color-adjust: none;
+  }
+
+  .wall-piece {
+    outline: 2px solid CanvasText;
+  }
+}
+
+/*
+ * 提示モード（電子黒板・大型提示装置）。
+ * 教室の後ろの席から盤面と手番が読めるように、文字と操作を一段大きくする。
+ * 4K を 65〜75インチで遠くから見るため、通常サイズの文字は読めない。
+ */
+.presentation {
+  --fs-title: clamp(28px, 4vw + 14px, 52px);
+  --fs-nav: clamp(20px, 2.4vw + 12px, 32px);
+  --fs-turn: clamp(20px, 2vw + 12px, 30px);
+  --fs-count: clamp(36px, 6vw, 64px);
+  --fs-panel-title: clamp(20px, 2vw + 12px, 30px);
+  --fs-panel-hint: clamp(15px, 1.8vw + 8px, 22px);
+  --app-header-height: 88px;
+  --app-controls-height: 108px;
+}
+
+.presentation .controls-inner {
+  height: 5.5rem;
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --fs-count: clamp(32px, 4.5vw, 56px);
+  }
+}
+
+/*
+ * 印刷する画面は無いが、誤って印刷したときに固定バーが本文に重ならないようにする。
+ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  .controls-bar,
+  nav,
+  footer,
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  main {
+    padding: 0 !important;
   }
 }
 

@@ -32,4 +32,14 @@ export default [
       globals: { ...globals.node },
     },
   },
+  {
+    // 計測ツールと品質ゲートは Node で走る。
+    // ブラウザへ流し込む文字列の中に window / document が出てくるので、
+    // 両方の globals を許可する（no-undef を必ず通しておく。
+    // import 漏れはビルドを通過して実行時に落ちるため）。
+    files: ['tools/**/*.mjs', 'scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
 ];

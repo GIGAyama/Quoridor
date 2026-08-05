@@ -1,0 +1,26 @@
+{
+  "$comment": [
+    "品質ゲートの設定。GIGA Standard v5 Part I の検査に対応する。",
+    "repoName は manifest の id / scope / start_url に使う絶対パスの元になる。",
+    "しきい値はすべて Part I に書かれている値で、勝手に緩めない。"
+  ],
+  "repoName": "Quoridor",
+  "appType": "B",
+  "cachePrefix": "kabe-kabe-",
+  "limits": {
+    "maxFileLines": 5000,
+    "maxFileKB": 400,
+    "maxImageKB": 150,
+    "maxIcon512KB": 60,
+    "maxFaviconKB": 30,
+    "maxInitialJsKB": 300,
+    "maxMaskableOutsideSafeZonePct": 0.2
+  },
+  "measured": {
+    "$comment": "実ブラウザで測るものは tools/ 側で測る。ここには静的に見るものだけ書く。",
+    "uiScript": "tools/measure-ui.mjs",
+    "pwaScript": "tools/measure-pwa.mjs",
+    "a11yScript": "tools/measure-a11y.mjs",
+    "iconScript": "tools/measure-icons.mjs"
+  }
+}
