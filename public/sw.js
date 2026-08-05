@@ -20,7 +20,7 @@
  * 【重要3】Service Worker は localStorage を一切操作しない。
  */
 const CACHE_PREFIX = 'kabe-kabe-';
-const APP_VERSION = 'v4';                       // ← リリースごとに必ず上げる
+const APP_VERSION = 'v5';                       // ← リリースごとに必ず上げる
 const CACHE_VERSION = CACHE_PREFIX + APP_VERSION;
 
 /*
@@ -43,6 +43,7 @@ const APP_SHELL = [
   './offline.html',
   './manifest.webmanifest',
   './install-hook.js',
+  './boot-check.js',
   './favicon.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -87,12 +88,37 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const response = await fetch(request);
-        const copy = response.clone();
-        caches.open(CACHE_VERSION).then((cache) => cache.put('./index.html', copy));
+        /*
+         * ⚠️ 取れたものを見ずにキャッシュへ入れてはいけない。
+         *
+         * fetch は 404 でも、学校のフィルタが出す遮断ページでも「成功」として返る。
+         * しかも遮断ページは 200 で返ってくることがあるので、response.ok だけでは足りない。
+         * 見ずに入れると、そのページが index.html として焼き付き、
+         * 以後オフラインのたびに本体ではなくそれが出る。
+         * 中身の無い遮断ページだと、児童からは白い画面にしか見えず、
+         * 配り直しても直らない（キャッシュから出しているため）。
+         *
+         * そこで「これは確かにこのアプリの本体である」ことを見てから入れる。
+         * id="root" は本体を描く器で、遮断ページにも 404 ページにも無い。
+         */
+        if (response.ok) {
+          const copy = response.clone();
+          copy.text().then((html) => {
+            if (!html.includes('id="root"')) return;   // 本体でないものは入れない
+            caches.open(CACHE_VERSION)
+              .then((cache) => cache.put('./index.html', new Response(html, {
+                status: 200,
+                headers: { 'Content-Type': 'text/html; charset=utf-8' },
+              })));
+          }).catch(() => {});
+        }
         return response;
       } catch {
-        return (await caches.match('./index.html'))
-          || (await caches.match('./offline.html'))
+        // 自アプリのキャッシュだけを見る。caches.match は引数だけだと
+        // 同じドメインに同居する他アプリのキャッシュまで探しに行く。
+        const cache = await caches.open(CACHE_VERSION);
+        return (await cache.match('./index.html'))
+          || (await cache.match('./offline.html'))
           || Response.error();
       }
     })());
@@ -102,7 +128,7 @@ self.addEventListener('fetch', (event) => {
   // その他のアセットはキャッシュ優先＋バックグラウンド更新
   // （校内Wi-Fiが混んでいても即表示される）
   event.respondWith(
-    caches.match(request).then((cached) => {
+    caches.open(CACHE_VERSION).then((cache) => cache.match(request)).then((cached) => {
       const network = fetch(request)
         .then((response) => {
           if (response.ok) {

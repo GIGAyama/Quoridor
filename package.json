@@ -16,7 +16,8 @@
     "measure:pwa": "node tools/measure-pwa.mjs dist",
     "measure:a11y": "node tools/measure-a11y.mjs dist",
     "measure:icons": "node tools/measure-icons.mjs dist",
-    "measure": "npm run measure:ui && npm run measure:pwa && npm run measure:a11y && npm run measure:icons",
+    "measure:boot": "node tools/measure-boot.mjs dist",
+    "measure": "npm run measure:ui && npm run measure:pwa && npm run measure:a11y && npm run measure:icons && npm run measure:boot",
     "check": "npm run lint && npm run test && npm run build && npm run gate && npm run measure"
   },
   "dependencies": {

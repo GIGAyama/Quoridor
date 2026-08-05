@@ -233,7 +233,14 @@ export const INJECTED_MEASURE_SOURCE = `
 `;
 
 /** 静的ファイルを配る簡易サーバ（CORS ヘッダー付き）。 */
-export async function serveDir(dir, port) {
+/*
+ * 配るディレクトリをそのまま出す小さなサーバ。
+ *
+ * intercept を渡すと、実ファイルを読む前に横取りできる（true を返したら応答済み）。
+ * 「本体の js が 404 になったら何が起きるか」のように、
+ * 壊れた配信を再現して測るために使う。
+ */
+export async function serveDir(dir, port, intercept) {
   const http = await import('node:http');
   const fs = await import('node:fs');
   const path = await import('node:path');
@@ -250,6 +257,7 @@ export async function serveDir(dir, port) {
   };
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (intercept && intercept(url, res)) return;
     let file = path.join(dir, decodeURIComponent(url.pathname));
     if (url.pathname.endsWith('/')) file = path.join(file, 'index.html');
     if (!file.startsWith(dir)) { res.writeHead(403).end(); return; }
