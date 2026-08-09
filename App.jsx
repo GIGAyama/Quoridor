@@ -124,7 +124,7 @@ const validateWall = (r, c, orientation, walls, boardSize, players) => {
   if (orientation === 'h' && r >= boardSize - 1) return <span><R t="外枠" r="そとわく"/>には<R t="置" r="お"/>けません。</span>;
 
   for (const w of walls) {
-    if (w.row === r && w.col === c && w.orientation === orientation) return <span>そこにカベはあります。</span>;
+    if (w.row === r && w.col === c && w.orientation === orientation) return <span>そこには もうカベが あります。</span>;
     if (w.row === r && w.col === c) return <span>カベがクロスしてしまいます。</span>;
     if (orientation === 'h' && w.orientation === 'h' && w.row === r && Math.abs(w.col - c) === 1) return <span>カベが<R t="重" r="かさ"/>なります。</span>;
     if (orientation === 'v' && w.orientation === 'v' && w.col === c && Math.abs(w.row - r) === 1) return <span>カベが<R t="重" r="かさ"/>なります。</span>;
@@ -484,8 +484,13 @@ export default function App() {
         } else {
           endTurn();
         }
-      } else if (!(players[turn].row === r && players[turn].col === c)) {
-        // 動けないマス。黙って何も起きないのがいちばん分かりにくいので、音と案内を出す。
+      } else {
+        /*
+         * 光っていないマスを押した。自分のコマを押した場合もここへ来る。
+         * このゲームには「コマを選んでから動かす」という手順が無いので、
+         * 自分のコマを押しても何も起きない。黙っているといちばん分かりにくいので、
+         * どちらの場合も音と案内を出す。
+         */
         playSound('error');
         setMoveHintAt(n => n + 1);
       }
@@ -530,6 +535,25 @@ export default function App() {
   };
 
   /*
+   * Esc で下見をやめる。
+   *
+   * 盤のマスだけで受けると、Tab で下のバーへ移ったあとに効かない。
+   * 「Esc でやめられる」と手引きに書く以上、どこを選んでいても効かなければ嘘になる。
+   * モーダルが開いているときは、そちらの Esc（閉じる）に譲る。
+   */
+  useEffect(() => {
+    if (!pendingWall || modal.show) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setPendingWall(null);
+      setHoverCell(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [pendingWall, modal.show]);
+
+  /*
    * カベの向きを変える。
    * 下見の途中なら、その場所のまま向きだけ変える（位置を選び直さずに済む）。
    * 変えた結果そこへ置けなくなったときは、その場で理由を出す。
@@ -564,11 +588,6 @@ export default function App() {
         else setHoverCell({ r: nr, c: nc });
       }
       cellRefs.current[`${nr},${nc}`]?.focus();
-      return;
-    }
-    if (e.key === 'Escape' && pendingWall) {
-      e.preventDefault();
-      cancelPendingWall();
       return;
     }
     if (e.key === 'Enter' || e.key === ' ') {
@@ -1032,7 +1051,7 @@ export default function App() {
 
       {/* フッター */}
       <footer className="text-center text-gray-600 py-3 mt-auto border-t border-yellow-300/50 bg-white/40 backdrop-blur-sm">
-        <small>© 2026 カベカベ合戦！ <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="tap-44 no-underline text-gray-600 hover:text-gray-800 transition-colors">GIGA山</a></small>
+        <small>© 2026 カベカベ<R t="合戦" r="がっせん"/>！ <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="tap-44 no-underline text-gray-600 hover:text-gray-800 transition-colors">GIGA山</a></small>
       </footer>
 
       {screen === 'game' && !winner && (
