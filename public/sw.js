@@ -20,7 +20,7 @@
  * 【重要3】Service Worker は localStorage を一切操作しない。
  */
 const CACHE_PREFIX = 'kabe-kabe-';
-const APP_VERSION = 'v5';                       // ← リリースごとに必ず上げる
+const APP_VERSION = 'v6';                       // ← リリースごとに必ず上げる
 const CACHE_VERSION = CACHE_PREFIX + APP_VERSION;
 
 /*

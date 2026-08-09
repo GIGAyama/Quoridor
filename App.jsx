@@ -47,6 +47,16 @@ const playSound = (type) => {
       osc.start(now);
       osc.stop(now + 0.15);
       break;
+    case 'aim':
+      // カベの置き場所を下見しただけの音。
+      // 「置いた」音（wall）とはっきり違う高さにして、まだ確定していないことを耳でも分ける。
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(880, now);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+      osc.start(now);
+      osc.stop(now + 0.07);
+      break;
     case 'error':
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(200, now);
@@ -170,6 +180,32 @@ export default function App() {
   const [mode, setMode] = useState('move');
   const [wallOrientation, setWallOrientation] = useState('v');
   const [hoverCell, setHoverCell] = useState(null);
+  /*
+   * カベは「2回で置く」。
+   *
+   * 1回目のタップで置き場所を決め（＝ここに入る）、点線のカベで下見してから、
+   * 2回目のタップか「ここに おく！」で確定する。
+   *
+   * マウスなら hover で下見できていたが、配備されているのはタブレットで、
+   * タブレットには hover が無い。つまり児童の大半は「押すまで分からない」まま
+   * カベを置いていて、置きまちがえるたびに「待った！」を押していた。
+   */
+  const [pendingWall, setPendingWall] = useState(null);
+  /*
+   * 直前の1手。
+   *
+   * 1台を2人で囲むので、相手が何をしたかを見ていないことがよくある。
+   * 「どこから動いたか」「どのカベが増えたか」を、次の1手まで残して見せる。
+   */
+  const [lastAction, setLastAction] = useState(null);
+  /*
+   * 動けないマスを押したときの合図。
+   *
+   * これまでは「何も起きない」だけだった。押しても反応が無いと、
+   * 児童は壊れたと思って何度も押す。数えているのは回数で、
+   * 押すたびに数が増えるので、続けて押しても案内が出っぱなしにならない。
+   */
+  const [moveHintAt, setMoveHintAt] = useState(0);
   const [history, setHistory] = useState([]);
   const [modal, setModal] = useState({ show: false });
   const [presentation, setPresentation] = useState(false);
@@ -255,6 +291,13 @@ export default function App() {
     setSetupWalls({ 1: defaultWalls, 2: defaultWalls });
   };
 
+  // 「そこへは動けません」の案内は、しばらくして自分で消える（押して閉じさせない）
+  useEffect(() => {
+    if (moveHintAt === 0) return undefined;
+    const t = setTimeout(() => setMoveHintAt(0), 1800);
+    return () => clearTimeout(t);
+  }, [moveHintAt]);
+
   useEffect(() => {
     if (modal.show && modal.timer) {
       const t = setTimeout(() => setModal(m => ({ ...m, show: false })), modal.timer);
@@ -284,7 +327,10 @@ export default function App() {
     const focusables = () => Array.from(node.querySelectorAll(
       'button:not([disabled]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
     ));
-    (focusables()[0] || node).focus();
+    // preventScroll を付けないと、下端のボタンへフォーカスが移った拍子に
+    // 窓の中が最後までスクロールし、本文の頭から読めなくなる。
+    (focusables()[0] || node).focus({ preventScroll: true });
+    node.scrollTop = 0;
 
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
@@ -326,6 +372,10 @@ export default function App() {
     setWallsLeft({ 1: setupWalls[1], 2: setupWalls[2] });
     setWinner(null);
     setMode('move');
+    setWallOrientation('v');
+    setHoverCell(null);
+    setPendingWall(null);
+    setLastAction(null);
     setHistory([]);
     setCursor({ r: center, c: 0 });   // キーボード操作の起点は先手の駒
     setScreen('game');
@@ -340,9 +390,35 @@ export default function App() {
     setTurn(lastState.turn);
     setWallsLeft(lastState.wallsLeft);
     setHistory(prev => prev.slice(0, -1));
+    // 戻したあとも入口は「あるく」。下見の途中だったカベは無かったことにする。
+    setMode('move');
+    setHoverCell(null);
+    setPendingWall(null);
+    setLastAction(null);
   };
 
-  const switchTurn = () => setTurn(t => t === 1 ? 2 : 1);
+  /*
+   * 手番を渡すときは、必ず「あるく」へ戻す。
+   *
+   * カベモードのまま次の子に回ると、その子が最初に触れたマスにカベが出る。
+   * 「動かしたいのにカベが出た」は、この画面でいちばん多い戸惑いだった。
+   * 番が変わったら入口はいつも同じ、を守る。
+   */
+  const endTurn = () => {
+    setTurn(t => t === 1 ? 2 : 1);
+    setMode('move');
+    setHoverCell(null);
+    setPendingWall(null);
+    setMoveHintAt(0);
+  };
+
+  // モードの切りかえ。下見の途中だったカベは持ち越さない。
+  const changeMode = (next) => {
+    setMode(next);
+    setHoverCell(null);
+    setPendingWall(null);
+    setMoveHintAt(0);
+  };
 
   const saveHistory = () => {
     setHistory(prev => [...prev, {
@@ -353,6 +429,27 @@ export default function App() {
     }]);
   };
 
+  // 置けない理由を伝える。理由は validateWall が文（ふりがな付き）で返す。
+  const showWallError = (message) => {
+    playSound('error');
+    showModal({ type: 'error', title: <span><R t="置" r="お"/>けません</span>, content: message, timer: 1500 });
+  };
+
+  // 下見していたカベを実際に置く。
+  const commitWall = (r, c) => {
+    const errorMsg = validateWall(r, c, wallOrientation, walls, boardSize, players);
+    if (errorMsg) {         // 向きを変えた結果、置けなくなっていた場合
+      showWallError(errorMsg);
+      return;
+    }
+    saveHistory();
+    playSound('wall');
+    setWalls(prev => [...prev, { row: r, col: c, orientation: wallOrientation }]);
+    setWallsLeft(prev => ({ ...prev, [turn]: prev[turn] - 1 }));
+    setLastAction({ type: 'wall', row: r, col: c, orientation: wallOrientation, player: turn });
+    endTurn();
+  };
+
   const handleCellClick = (r, c) => {
     if (winner) return;
     initAudio();
@@ -361,13 +458,15 @@ export default function App() {
       if (isValidMove(players[turn], r, c, turn, players, walls)) {
         saveHistory();
         playSound('move');
-        
+
+        const from = { r: players[turn].row, c: players[turn].col };
         setPlayers(prev => ({
           ...prev,
           [turn]: { ...prev[turn], row: r, col: c }
         }));
         setCursor({ r, c });
-        
+        setLastAction({ type: 'move', from, to: { r, c }, player: turn });
+
         if (c === players[turn].goalCol) {
           setWinner(turn);
           playSound('win');
@@ -383,8 +482,12 @@ export default function App() {
             onConfirm: () => setScreen('setup')
           });
         } else {
-          switchTurn();
+          endTurn();
         }
+      } else if (!(players[turn].row === r && players[turn].col === c)) {
+        // 動けないマス。黙って何も起きないのがいちばん分かりにくいので、音と案内を出す。
+        playSound('error');
+        setMoveHintAt(n => n + 1);
       }
     } else {
       if (wallsLeft[turn] <= 0) {
@@ -397,18 +500,47 @@ export default function App() {
         });
         return;
       }
-      const errorMsg = validateWall(r, c, wallOrientation, walls, boardSize, players);
-      if (errorMsg) {
-        playSound('error');
-        showModal({ type: 'error', title: <span><R t="置" r="お"/>けません</span>, content: errorMsg, timer: 1500 });
+
+      // 同じところをもう一度えらんだら「置く」。
+      // ちがうところをえらんだら、そちらへ下見を移す（やめる操作は要らない）。
+      if (pendingWall && pendingWall.r === r && pendingWall.c === c) {
+        commitWall(r, c);
         return;
       }
 
-      saveHistory();
-      playSound('wall');
-      setWalls(prev => [...prev, { row: r, col: c, orientation: wallOrientation }]);
-      setWallsLeft(prev => ({ ...prev, [turn]: prev[turn] - 1 }));
-      switchTurn();
+      const errorMsg = validateWall(r, c, wallOrientation, walls, boardSize, players);
+      if (errorMsg) {
+        // 置けない場所は、下見に入れずその場で理由を出す。
+        setPendingWall(null);
+        showWallError(errorMsg);
+        return;
+      }
+
+      playSound('aim');
+      setPendingWall({ r, c });
+      setHoverCell(null);
+      setCursor({ r, c });
+    }
+  };
+
+  // 下見をやめる（カベは置かない）。
+  const cancelPendingWall = () => {
+    setPendingWall(null);
+    setHoverCell(null);
+  };
+
+  /*
+   * カベの向きを変える。
+   * 下見の途中なら、その場所のまま向きだけ変える（位置を選び直さずに済む）。
+   * 変えた結果そこへ置けなくなったときは、その場で理由を出す。
+   */
+  const toggleWallOrientation = () => {
+    initAudio();
+    const next = wallOrientation === 'v' ? 'h' : 'v';
+    setWallOrientation(next);
+    if (pendingWall) {
+      const errorMsg = validateWall(pendingWall.r, pendingWall.c, next, walls, boardSize, players);
+      if (errorMsg) showWallError(errorMsg);
     }
   };
 
@@ -416,6 +548,7 @@ export default function App() {
    * 盤面のキーボード操作。
    * 矢印キーで選ぶマスを動かし、Enter か Space で決める。
    * カベモードでは、選んだマスがそのままカベの置き場所の下見（プレビュー）になる。
+   * 下見に入っているときは、矢印キーで下見そのものが動く（選び直しに戻らなくてよい）。
    */
   const handleCellKeyDown = (e, r, c) => {
     const DIRS = {
@@ -426,8 +559,16 @@ export default function App() {
       const nr = Math.min(boardSize - 1, Math.max(0, r + DIRS[e.key][0]));
       const nc = Math.min(boardSize - 1, Math.max(0, c + DIRS[e.key][1]));
       setCursor({ r: nr, c: nc });
-      if (mode === 'wall') setHoverCell({ r: nr, c: nc });
+      if (mode === 'wall') {
+        if (pendingWall) setPendingWall({ r: nr, c: nc });
+        else setHoverCell({ r: nr, c: nc });
+      }
       cellRefs.current[`${nr},${nc}`]?.focus();
+      return;
+    }
+    if (e.key === 'Escape' && pendingWall) {
+      e.preventDefault();
+      cancelPendingWall();
       return;
     }
     if (e.key === 'Enter' || e.key === ' ') {
@@ -440,11 +581,17 @@ export default function App() {
    * 画面の変化を読み上げてもらうための文言。
    * 目で見て分かること（手番の色・のこりカベ）を、見えない人にも同じだけ伝える。
    */
+  const orientationLabel = wallOrientation === 'v' ? 'タテ' : 'ヨコ';
   const liveMessage = winner
     ? `${winner === 1 ? '青' : '赤'}チームの勝ちです`
     : screen === 'game'
-      ? `${turn === 1 ? '青' : '赤'}チームの番です。のこりカベ ${wallsLeft[turn]}枚。`
-        + `${mode === 'move' ? 'いまはコマを動かします' : `いまはカベを${wallOrientation === 'v' ? 'タテ' : 'ヨコ'}に置きます`}`
+      ? pendingWall
+        ? `${pendingWall.r + 1}だん ${pendingWall.c + 1}れつ に ${orientationLabel}のカベを 置きますか。`
+          + 'もう一度えらぶか、「ここに おく」で 決まります。Esc でやめられます。'
+        : moveHintAt > 0
+          ? 'そこへは動けません。ひかっているマスへ動かしてください'
+          : `${turn === 1 ? '青' : '赤'}チームの番です。のこりカベ ${wallsLeft[turn]}枚。`
+          + `${mode === 'move' ? 'いまはコマを動かします' : `いまはカベを${orientationLabel}に置く場所をえらびます`}`
       : '';
 
   // 現在の手番で移動できるマスを事前計算（毎セルの再計算を避ける）
@@ -459,6 +606,30 @@ export default function App() {
     return set;
   }, [players, walls, turn, mode, winner, boardSize]);
 
+  /*
+   * いまの向きでカベを置ける場所を、先に全部数えておく。
+   *
+   * 「どこに置けるのか」が分からないまま当てずっぽうに押して、
+   * そのたびに「置けません」が出るのがいちばん辛い。
+   * 置ける継ぎ目に小さな印を出しておけば、押す前に見当がつく。
+   */
+  const validWallSet = useMemo(() => {
+    const set = new Set();
+    if (winner || mode !== 'wall' || wallsLeft[turn] <= 0) return set;
+    for (let r = 0; r < boardSize - 1; r++) {
+      for (let c = 0; c < boardSize - 1; c++) {
+        if (!validateWall(r, c, wallOrientation, walls, boardSize, players)) set.add(`${r},${c}`);
+      }
+    }
+    return set;
+  }, [players, walls, turn, mode, winner, boardSize, wallOrientation, wallsLeft]);
+
+  // 下見の対象。指で決めたもの（pendingWall）を、マウスを乗せただけのもの（hoverCell）より優先する。
+  const previewCell = pendingWall || hoverCell;
+  const pendingError = pendingWall
+    ? validateWall(pendingWall.r, pendingWall.c, wallOrientation, walls, boardSize, players)
+    : null;
+
   const GAP = 4;
   const getPositionStyle = (r, c) => ({
     left: `calc((100% - ${GAP * (boardSize - 1)}px) / ${boardSize} * ${c} + ${GAP * c}px)`,
@@ -466,6 +637,40 @@ export default function App() {
     width: `calc((100% - ${GAP * (boardSize - 1)}px) / ${boardSize})`,
     height: `calc((100% - ${GAP * (boardSize - 1)}px) / ${boardSize})`,
   });
+
+  // マスとマスの継ぎ目（カベの起点）に置く小さな点。
+  const getJunctionStyle = (r, c, size = 7) => {
+    const s = getPositionStyle(r, c);
+    const half = size / 2;
+    return {
+      left: `calc(${s.left} + ${s.width} + ${GAP / 2}px - ${half}px)`,
+      top: `calc(${s.top} + ${s.height} + ${GAP / 2}px - ${half}px)`,
+      width: `${size}px`,
+      height: `${size}px`,
+    };
+  };
+
+  /*
+   * カベ1枚ぶんの置き場所（マスとマスの継ぎ目）を求める。
+   * 実物・下見・置ける印のすべてがこの計算を使う。ずれると下見の意味が無くなる。
+   */
+  const getWallStyle = (r, c, orientation, thickness = 8) => {
+    const s = getPositionStyle(r, c);
+    const half = thickness / 2;
+    return orientation === 'h'
+      ? {
+          left: s.left,
+          top: `calc(${s.top} + ${s.height} + ${GAP / 2}px - ${half}px)`,
+          width: `calc(${s.width} * 2 + ${GAP}px)`,
+          height: `${thickness}px`,
+        }
+      : {
+          left: `calc(${s.left} + ${s.width} + ${GAP / 2}px - ${half}px)`,
+          top: s.top,
+          height: `calc(${s.height} * 2 + ${GAP}px)`,
+          width: `${thickness}px`,
+        };
+  };
 
   const showRules = () => {
     showModal({
@@ -507,6 +712,25 @@ export default function App() {
             </div>
             <div className="text-[15px] leading-relaxed text-gray-700 font-medium">
               <span><R t="相手" r="あいて"/>の<R t="道" r="みち"/>をふさごう！でも、ゴールへの<R t="道" r="みち"/>を<R t="完全" r="かんぜん"/>になくすのは<R t="反則" r="はんそく"/>だよ。</span>
+            </div>
+          </div>
+          {/* Rule 4 … ルールではなく操作。カベは2回で置く、を絵で見せる */}
+          <div className="p-4 bg-[#f9fbe7] rounded-xl border-2 border-[#e6ee9c]">
+            <div className="font-bold text-[#33691e] text-lg flex items-center mb-3">
+              <span className="bg-white rounded-full w-10 h-10 flex items-center justify-center shadow-sm mr-3 text-xl">4</span>
+              <span>カベは<R t="2回" r="にかい"/>で<R t="置" r="お"/>く</span>
+            </div>
+            <div className="text-center my-4 leading-tight">
+              <span className="text-3xl">👆</span>
+              <span className="text-base text-gray-600 font-bold mx-2">1<R t="回目" r="かいめ"/>：<R t="下見" r="したみ"/></span>
+              <span className="text-2xl mx-1">➡</span>
+              <span className="text-3xl">👆</span>
+              <span className="text-base text-gray-600 font-bold mx-2">2<R t="回目" r="かいめ"/>：<R t="決" r="き"/>まり</span>
+            </div>
+            <div className="text-[15px] leading-relaxed text-gray-700 font-medium">
+              <span>1<R t="回目" r="かいめ"/>で<R t="点線" r="てんせん"/>のカベが<R t="出" r="で"/>るよ。ちがうところを<R t="押" r="お"/>せば<R t="場所" r="ばしょ"/>を<R t="変" r="か"/>えられるし、「やめる」でやめられる。</span>
+              <br/>
+              <span><R t="番" r="ばん"/>が<R t="変" r="か"/>わると、いつも「<R t="歩" r="ある"/>く」にもどるよ。</span>
             </div>
           </div>
         </div>
@@ -643,7 +867,21 @@ export default function App() {
               </div>
 
               <div className="bg-white/80 p-3 md:p-4 rounded-3xl shadow-xl border-4 border-white backdrop-blur-sm relative">
-                
+
+                {/*
+                  いま何をすればよいかを、盤のすぐ上に短く出す。
+                  盤の枠の上に重ねるので、マスは1つも隠れない（押す邪魔にもならない）。
+                */}
+                {!winner && (mode === 'wall' || moveHintAt > 0) && (
+                  <div className={`board-hint absolute left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full bg-white shadow-md border-2 text-gray-800 font-bold text-sm text-center pointer-events-none ${mode === 'wall' ? 'border-amber-400' : 'border-red-400'}`}>
+                    {mode === 'wall'
+                      ? (pendingWall
+                        ? <span>もう<R t="一度" r="いちど"/>タップで <R t="決" r="き"/>まり！</span>
+                        : <span>カベを<R t="置" r="お"/>くところを タップ</span>)
+                      : <span><R t="光" r="ひか"/>っているマスへ うごかしてね</span>}
+                  </div>
+                )}
+
                 <div className="relative w-full aspect-square touch-manipulation" onMouseLeave={() => setHoverCell(null)}>
                   
                   <div
@@ -656,11 +894,13 @@ export default function App() {
                       const r = Math.floor(i / boardSize);
                       const c = i % boardSize;
                       const isHighlighted = validMoveSet.has(`${r},${c}`);
+                      const canWall = validWallSet.has(`${r},${c}`);
                       const occupant = players[1].row === r && players[1].col === c ? '青のコマ'
                         : players[2].row === r && players[2].col === c ? '赤のコマ' : '';
                       // roving tabindex。81マスを Tab で順に辿らせないため、
                       // Tab で入れるのは「いま選んでいるマス」1つだけにする。
                       const isCursor = cursor.r === r && cursor.c === c;
+                      const isAimed = !!pendingWall && pendingWall.r === r && pendingWall.c === c;
                       return (
                         <div key={i}
                           ref={(el) => { cellRefs.current[`${r},${c}`] = el; }}
@@ -669,9 +909,11 @@ export default function App() {
                           tabIndex={isCursor ? 0 : -1}
                           aria-label={`${r + 1}だん ${c + 1}れつ`
                             + `${occupant ? `、${occupant}` : ''}`
-                            + `${isHighlighted ? '、ここへ うごけます' : ''}`}
-                          onMouseEnter={mode === 'wall' ? () => setHoverCell({r, c}) : undefined}
-                          onFocus={() => { setCursor({ r, c }); if (mode === 'wall') setHoverCell({ r, c }); }}
+                            + `${isHighlighted ? '、ここへ うごけます' : ''}`
+                            + `${canWall ? `、ここに ${orientationLabel}のカベを おけます` : ''}`
+                            + `${isAimed ? '、カベを おく ばしょに えらんでいます' : ''}`}
+                          onMouseEnter={mode === 'wall' && !pendingWall ? () => setHoverCell({r, c}) : undefined}
+                          onFocus={() => { setCursor({ r, c }); if (mode === 'wall' && !pendingWall) setHoverCell({ r, c }); }}
                           onClick={() => handleCellClick(r, c)}
                           onKeyDown={(e) => handleCellKeyDown(e, r, c)}
                         >
@@ -694,21 +936,58 @@ export default function App() {
                     <div className="pawn-piece w-[80%] h-[80%] rounded-full bg-gradient-to-br from-red-300 to-red-600 border-[3px] border-white shadow-lg flex items-center justify-center">🔴</div>
                   </div>
 
-                  {walls.map((w, i) => {
-                    const style = getPositionStyle(w.row, w.col);
-                    const wallStyle = { backgroundColor: '#8d6e63', backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.1), rgba(255,255,255,0.1) 5px, transparent 5px, transparent 10px)' };
-                    return w.orientation === 'h' 
-                      ? <div key={`w-${i}`} className="wall-piece absolute z-20 shadow-md border border-white/20 rounded-sm" style={{ ...wallStyle, left: style.left, top: `calc(${style.top} + ${style.height} + ${GAP/2}px - 4px)`, width: `calc(${style.width} * 2 + ${GAP}px)`, height: '8px' }} />
-                      : <div key={`w-${i}`} className="wall-piece absolute z-20 shadow-md border border-white/20 rounded-sm" style={{ ...wallStyle, left: `calc(${style.left} + ${style.width} + ${GAP/2}px - 4px)`, top: style.top, height: `calc(${style.height} * 2 + ${GAP}px)`, width: '8px' }} />;
+                  {/*
+                    カベを置ける継ぎ目の印。
+                    いまの向き（タテ／ヨコ）で置けるところだけに、小さな点を出す。
+                    押す前に「どこなら置けるか」が見えるので、当てずっぽうに押さなくて済む。
+                    カベの形そのままで出すと盤が印だらけになるので、継ぎ目の点だけにしてある。
+                  */}
+                  {mode === 'wall' && !winner && [...validWallSet].map((key) => {
+                    const [r, c] = key.split(',').map(Number);
+                    return <div key={`slot-${key}`} className="wall-slot absolute z-[15] rounded-full pointer-events-none" style={getJunctionStyle(r, c)} />;
                   })}
 
-                  {mode === 'wall' && hoverCell && !winner && (() => {
-                    const previewError = validateWall(hoverCell.r, hoverCell.c, wallOrientation, walls, boardSize, players);
-                    const style = getPositionStyle(hoverCell.r, hoverCell.c);
-                    const color = previewError ? '#ef4444' : '#fbbf24';
-                    return wallOrientation === 'h'
-                      ? <div className="wall-preview absolute z-30 border-2 border-dashed pointer-events-none opacity-90 rounded-sm" style={{ left: style.left, top: `calc(${style.top} + ${style.height} + ${GAP/2}px - 4px)`, width: `calc(${style.width} * 2 + ${GAP}px)`, height: '8px', backgroundColor: color, borderColor: previewError ? 'white' : '#78350f' }} />
-                      : <div className="wall-preview absolute z-30 border-2 border-dashed pointer-events-none opacity-90 rounded-sm" style={{ left: `calc(${style.left} + ${style.width} + ${GAP/2}px - 4px)`, top: style.top, height: `calc(${style.height} * 2 + ${GAP}px)`, width: '8px', backgroundColor: color, borderColor: previewError ? 'white' : '#78350f' }} />;
+                  {/* 直前に動いたコマが「どこから来たか」。次の1手まで残す。 */}
+                  {lastAction?.type === 'move' && !winner && (
+                    <div
+                      className={`last-from absolute z-[6] rounded-lg pointer-events-none ${lastAction.player === 1 ? 'is-blue' : 'is-red'}`}
+                      style={getPositionStyle(lastAction.from.r, lastAction.from.c)}
+                      aria-hidden="true"
+                    />
+                  )}
+
+                  {walls.map((w, i) => {
+                    const wallStyle = { backgroundColor: '#8d6e63', backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.1), rgba(255,255,255,0.1) 5px, transparent 5px, transparent 10px)' };
+                    // 直前に置かれたカベ（＝いちばん新しい1枚）は、見落とされやすいので枠で囲む
+                    const isNew = lastAction?.type === 'wall' && i === walls.length - 1 && !winner;
+                    return (
+                      <div
+                        key={`w-${i}`}
+                        className={`wall-piece absolute z-20 shadow-md border border-white/20 rounded-sm${isNew ? ' is-new' : ''}`}
+                        style={{ ...wallStyle, ...getWallStyle(w.row, w.col, w.orientation) }}
+                      />
+                    );
+                  })}
+
+                  {/*
+                    カベの下見。
+                    指で選んだ場所（pendingWall）が最優先。マウスを乗せただけのときは薄めに出す。
+                    置ける＝黄色、置けない＝赤。選び終えているものは、光らせて「まだ確定していない」ことを示す。
+                  */}
+                  {mode === 'wall' && previewCell && !winner && (() => {
+                    const previewError = validateWall(previewCell.r, previewCell.c, wallOrientation, walls, boardSize, players);
+                    const aimed = !!pendingWall;
+                    return (
+                      <div
+                        className={`wall-preview absolute z-30 border-2 border-dashed pointer-events-none rounded-sm${aimed ? ' is-aimed' : ''}${previewError ? ' is-error' : ''}`}
+                        style={{
+                          ...getWallStyle(previewCell.r, previewCell.c, wallOrientation),
+                          backgroundColor: previewError ? '#ef4444' : '#fbbf24',
+                          borderColor: previewError ? 'white' : '#78350f',
+                          opacity: aimed ? 1 : 0.75,
+                        }}
+                      />
+                    );
                   })()}
 
                 </div>
@@ -759,24 +1038,90 @@ export default function App() {
       {screen === 'game' && !winner && (
         <div className="controls-bar fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-gray-200 p-3 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-40 pb-safe">
           <div className="controls-inner max-w-3xl mx-auto flex gap-3 h-16">
-            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => { setMode('move'); setHoverCell(null); }}>
-              <span className="text-2xl leading-none mb-1">🏃</span><span className="text-[10px] tracking-wider"><span><R t="歩" r="ある"/>く</span></span>
-            </button>
-            <button className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'wall' ? 'bg-amber-400 text-amber-900 shadow-lg shadow-amber-400/40 scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} onClick={() => setMode('wall')}>
-              <span className="text-2xl leading-none mb-1">🚧</span><span className="text-[10px] tracking-wider">カベ</span>
-            </button>
-            <div className="flex-[1.2] flex items-center justify-center">
-              {mode === 'move' ? (
-                <div className="w-full h-full bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300 flex items-center justify-center text-sm font-bold text-gray-600 text-center leading-tight">
-                  <span><R t="光" r="ひか"/>るマスを<br/>タップ！</span>
-                </div>
-              ) : (
-                <button onClick={() => setWallOrientation(o => o === 'v' ? 'h' : 'v')} className="w-full h-full bg-yellow-50 hover:bg-yellow-100 border-2 border-amber-300 rounded-2xl font-bold text-amber-900 flex flex-col items-center justify-center transition-all active:scale-95">
-                  <span className="text-sm"><span><R t="今" r="いま"/>は <b className="text-base">{wallOrientation === 'v' ? 'タテ' : 'ヨコ'}</b></span></span>
+            {pendingWall ? (
+              /*
+               * カベの置き場所を選んだあとの操作。
+               * 「やめる」「ここに おく」「むきをかえる」の3つだけにして、
+               * 決める前に必ずいったん止まるようにしてある。
+               * ボタンの数と並びは、ふだんの3つと同じにして戸惑わせない。
+               */
+              <>
+                <button
+                  onClick={cancelPendingWall}
+                  aria-label="カベを置くのをやめる"
+                  className="flex-1 rounded-2xl font-bold flex flex-col items-center justify-center bg-gray-100 text-gray-700 border-2 border-gray-300 hover:bg-gray-200 active:scale-95 transition-all"
+                >
+                  <span className="text-2xl leading-none mb-1" aria-hidden="true">✋</span>
+                  <span className="text-[10px] tracking-wider">やめる</span>
+                </button>
+                <button
+                  onClick={() => { initAudio(); commitWall(pendingWall.r, pendingWall.c); }}
+                  disabled={!!pendingError}
+                  aria-label={pendingError
+                    ? 'ここにはカベを置けません'
+                    : `${pendingWall.r + 1}だん ${pendingWall.c + 1}れつ に ${orientationLabel}のカベを置く`}
+                  className={`flex-[1.6] rounded-2xl font-bold flex flex-col items-center justify-center transition-all ${
+                    pendingError
+                      ? 'bg-gray-100 text-gray-400 border-2 border-gray-200 opacity-50 cursor-not-allowed'
+                      : 'bg-amber-400 text-amber-900 shadow-lg shadow-amber-400/40 hover:bg-amber-300 active:scale-95'
+                  }`}
+                >
+                  <span className="text-2xl leading-none mb-1" aria-hidden="true">{pendingError ? '🚫' : '🚧'}</span>
+                  <span className="text-xs tracking-wider">
+                    {pendingError ? <span><R t="置" r="お"/>けません</span> : <span>ここに <R t="置" r="お"/>く！</span>}
+                  </span>
+                </button>
+                <button
+                  onClick={toggleWallOrientation}
+                  aria-label={`カベの向きを${wallOrientation === 'v' ? 'ヨコ' : 'タテ'}にする`}
+                  className="flex-[1.2] bg-yellow-50 hover:bg-yellow-100 border-2 border-amber-300 rounded-2xl font-bold text-amber-900 flex flex-col items-center justify-center transition-all active:scale-95"
+                >
+                  <span className="text-sm"><span>むきは <b className="text-base">{orientationLabel}</b></span></span>
                   <span className="text-[10px] text-amber-700 mt-0.5"><span><R t="押" r="お"/>すと{wallOrientation === 'v' ? 'ヨコ' : 'タテ'}</span></span>
                 </button>
-              )}
-            </div>
+              </>
+            ) : (
+              <>
+                <button
+                  aria-pressed={mode === 'move'}
+                  className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${mode === 'move' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  onClick={() => changeMode('move')}
+                >
+                  <span className="text-2xl leading-none mb-1" aria-hidden="true">🏃</span><span className="text-[10px] tracking-wider"><span><R t="歩" r="ある"/>く</span></span>
+                </button>
+                {/* のこり0枚のときは押せなくする。押してから「ありません」と言われるより、押せない方が早く分かる */}
+                <button
+                  aria-pressed={mode === 'wall'}
+                  disabled={wallsLeft[turn] <= 0}
+                  aria-label={wallsLeft[turn] <= 0 ? 'カベはもうありません' : `カベを置く。のこり${wallsLeft[turn]}枚`}
+                  className={`flex-1 rounded-2xl font-bold flex flex-col items-center justify-center transition-all duration-200 ${
+                    wallsLeft[turn] <= 0
+                      ? 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+                      : mode === 'wall' ? 'bg-amber-400 text-amber-900 shadow-lg shadow-amber-400/40 scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  onClick={() => changeMode('wall')}
+                >
+                  <span className="text-2xl leading-none mb-1" aria-hidden="true">🚧</span>
+                  <span className="text-[10px] tracking-wider" aria-hidden="true">カベ ×{wallsLeft[turn]}</span>
+                </button>
+                <div className="flex-[1.2] flex items-center justify-center">
+                  {mode === 'move' ? (
+                    <div className="w-full h-full bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300 flex items-center justify-center text-sm font-bold text-gray-600 text-center leading-tight">
+                      <span><R t="光" r="ひか"/>るマスを<br/>タップ！</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={toggleWallOrientation}
+                      aria-label={`カベの向きを${wallOrientation === 'v' ? 'ヨコ' : 'タテ'}にする`}
+                      className="w-full h-full bg-yellow-50 hover:bg-yellow-100 border-2 border-amber-300 rounded-2xl font-bold text-amber-900 flex flex-col items-center justify-center transition-all active:scale-95"
+                    >
+                      <span className="text-sm"><span><R t="今" r="いま"/>は <b className="text-base">{orientationLabel}</b></span></span>
+                      <span className="text-[10px] text-amber-700 mt-0.5"><span><R t="押" r="お"/>すと{wallOrientation === 'v' ? 'ヨコ' : 'タテ'}</span></span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -790,7 +1135,12 @@ export default function App() {
             aria-modal="true"
             aria-labelledby="modal-title"
             tabIndex={-1}
-            className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl scale-100 transition-transform focus:outline-none"
+            /*
+             * 中身が画面より高いときは、窓の中だけをスクロールさせる。
+             * これが無いと、小さい画面（320x568）では「あそびかた」の
+             * 上と下が画面の外へ出たまま、どうやっても読めなかった。
+             */
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl scale-100 transition-transform focus:outline-none max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
           >
             <div className={`flex justify-center mb-4 ${modal.type === 'success' ? 'text-green-700' : modal.type === 'error' ? 'text-red-600' : modal.type === 'warning' ? 'text-amber-700' : 'text-blue-600'}`}>
               {modal.type === 'success' ? <CheckCircle size={56} strokeWidth={2.5} /> : modal.type === 'error' ? <XCircle size={56} strokeWidth={2.5} /> : modal.type === 'warning' ? <AlertTriangle size={56} strokeWidth={2.5} /> : <Info size={56} strokeWidth={2.5} />}
