@@ -35,13 +35,16 @@ async function walkTo(page, state, boardSize) {
     await page.getByRole('button', { name: 'あそびかたを見る' }).click();
     await page.waitForTimeout(150);
   }
-  if (state === 'wall' || state === 'wall-error') {
+  if (state === 'wall' || state === 'wall-error' || state === 'wall-aim') {
     await page.getByRole('button', { name: /カベ/ }).last().click();
     await page.waitForTimeout(100);
     // 盤面の外枠に置こうとして「置けません」を出す（案内文はいちばん読みにくくなりやすい）
     const cells = page.locator(`${CELL_GRID} > div`);
     if (state === 'wall-error') {
       await cells.nth(boardSize * boardSize - 1).click();
+    } else if (state === 'wall-aim') {
+      // 置き場所を選んだところ（「ここに おく！」が出ている状態）
+      await cells.nth(Math.floor(boardSize * boardSize / 2)).click();
     } else {
       await cells.nth(Math.floor(boardSize * boardSize / 2)).hover();
     }
@@ -78,6 +81,7 @@ const STATES = [
   { state: 'game', boardSize: 5, label: 'ゲーム画面 5x5' },
   { state: 'rules', boardSize: 9, label: 'あそびかた（モーダル）' },
   { state: 'wall', boardSize: 9, label: 'カベモード（プレビュー中）' },
+  { state: 'wall-aim', boardSize: 9, label: 'カベの置き場所を選んだところ' },
   { state: 'wall-error', boardSize: 9, label: 'エラー表示（置けません）' },
   { state: 'win', boardSize: 5, label: '勝利モーダル' },
 ];

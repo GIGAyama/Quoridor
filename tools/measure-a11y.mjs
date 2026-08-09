@@ -80,7 +80,57 @@ const run = async () => {
   });
   ok('F1 手番が aria-live で読み上げられる', !!live && /チームの番です/.test(live), JSON.stringify(live));
 
-  // --- 5. モーダルの作法 ---------------------------------------------------
+  // --- 5. カベもキーボードだけで置けるか ----------------------------------
+  // カベは「1回目で下見、2回目で決まり」。マウスが使えなくても同じ手順で置けなければ、
+  // キーボードの子だけカベを使えないことになる。
+  guard = 0;
+  let onWallButton = false;
+  while (guard++ < 40) {
+    await page.keyboard.press('Tab');
+    onWallButton = await page.evaluate(() => {
+      const el = document.activeElement;
+      const name = (el?.getAttribute('aria-label') || el?.textContent || '').trim();
+      return el?.tagName === 'BUTTON' && /カベを置く/.test(name);
+    });
+    if (onWallButton) break;
+  }
+  await page.keyboard.press('Enter');
+  ok('F3e キーボードでカベモードへ入れる', onWallButton, `Tab ${guard} 回`);
+
+  // 盤面へ戻る（Shift+Tab）
+  guard = 0;
+  let backOnCell = false;
+  while (guard++ < 40) {
+    await page.keyboard.press('Shift+Tab');
+    backOnCell = await page.evaluate(() => document.activeElement?.getAttribute('role') === 'gridcell');
+    if (backOnCell) break;
+  }
+
+  await page.keyboard.press('Enter');           // 1回目 … 下見
+  await page.waitForTimeout(120);
+  const aimed = await page.evaluate(() => !!document.querySelector('.wall-preview.is-aimed'));
+  const placedTooEarly = await page.evaluate(() => document.querySelectorAll('.wall-piece').length);
+  ok('F3f Enter 1回で下見に入る（まだ置かれない）',
+     backOnCell && aimed && placedTooEarly === 0,
+     `盤面へ戻れた=${backOnCell} / 下見=${aimed} / この時点のカベ ${placedTooEarly} 枚`);
+
+  await page.keyboard.press('Escape');          // やめられるか
+  await page.waitForTimeout(120);
+  const cancelled = await page.evaluate(() => !document.querySelector('.wall-preview.is-aimed'));
+  ok('F3g Esc で下見をやめられる', cancelled, `下見が残っている=${!cancelled}`);
+
+  await page.keyboard.press('Enter');           // もう一度 1回目
+  await page.keyboard.press('Enter');           // 2回目 … 決まり
+  await page.waitForTimeout(300);
+  const placed = await page.evaluate(() => document.querySelectorAll('.wall-piece').length);
+  const backToWalk = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => /歩/.test(x.textContent || ''));
+    return b?.getAttribute('aria-pressed') === 'true';
+  });
+  ok('F3h Enter 2回でカベが置ける', placed === 1, `カベ ${placed} 枚`);
+  ok('F3i 置いたら「あるく」に戻っている', backToWalk, `あるくが選ばれている=${backToWalk}`);
+
+  // --- 6. モーダルの作法 ---------------------------------------------------
   await page.getByRole('button', { name: 'あそびかたを見る' }).click();
   await page.waitForTimeout(300);
   const dialog = await page.evaluate(() => {
@@ -117,7 +167,7 @@ const run = async () => {
   ok('F2c Esc で閉じ、フォーカスが元へ戻る', closed && returned,
      `closed=${closed} / returned=${returned}`);
 
-  // --- 6. 見出しの階層 -----------------------------------------------------
+  // --- 7. 見出しの階層 -----------------------------------------------------
   const headings = await page.evaluate(() =>
     [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h) => h.tagName));
   let jump = false;
