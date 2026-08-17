@@ -283,7 +283,14 @@ export function runChecks(root, config) {
     .find((p) => existsSync(join(root, p)));
   if (manifestPath) {
     const mf = JSON.parse(readFileSync(join(root, manifestPath), 'utf8'));
-    const want = `/${repo}/`;
+    // 正しい値は「どこで配信するか」で変わる。
+    // 独自ドメイン（CNAME あり）だとアプリは quoridor.giga-school.com の直下に置かれる。
+    // ここで /Quoridor/ のままにすると scope がページの URL を含まなくなり、
+    // manifest ごと無視されて PWA としてインストールできなくなる。
+    // CNAME が無ければ従来どおり共有オリジンのサブディレクトリ配信なので、
+    // リポジトリ名の絶対パスでないと同居する別アプリと取り違えられる。
+    const hasCname = existsSync(join(root, 'CNAME')) || existsSync(join(root, 'public', 'CNAME'));
+    const want = hasCname ? './' : `/${repo}/`;
     const wrong = ['id', 'scope', 'start_url'].filter((k) => mf[k] !== want);
     add('E1_MANIFEST_PATHS', wrong.length === 0,
       wrong.length ? `${wrong.map((k) => `${k}=${mf[k]}`).join(', ')}（すべて ${want} にする）` : want, 'P0');

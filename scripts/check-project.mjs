@@ -129,7 +129,9 @@ const BREAKS = [
   {
     id: 'E1_MANIFEST_PATHS',
     file: 'public/manifest.webmanifest',
-    apply: (s) => s.replace('"start_url": "/Quoridor/"', '"start_url": "./"'),
+    // "./" は独自ドメインでの正しい値なので、もう壊れた形ではない。
+    // いまの壊れ方は、サブドメイン直下で配信するのにリポジトリ名の絶対パスが残っていること。
+    apply: (s) => s.replace('"start_url": "./"', '"start_url": "/Quoridor/"'),
   },
   {
     id: 'B6_NO_CDN_EXEC',
