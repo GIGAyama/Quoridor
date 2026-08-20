@@ -4,7 +4,7 @@ GIGAスクール端末（Chromebook/iPad）で快適に動作する、教育用�
 
 Vite + React 製のPWA（プログレッシブウェブアプリ）として動作し、Chromeなどのブラウザから「アプリとしてインストール」して利用できます。
 
-公開先： https://gigayama.github.io/Quoridor/
+公開先： https://quoridor.giga-school.com/
 
 ## **🎮 ゲーム概要**
 
@@ -181,7 +181,7 @@ npm run measure:boot     # 本体が読めないときに、画面から自力�
   （独自ドメインや CDN を挟むときは、そちら側で HTTP ヘッダーとして設定すること）。
 * **個人情報を持たない。** 名前・出席番号を入力する欄が無く、`localStorage` も使っていない。
 * **Service Worker は自アプリ接頭辞（`kabe-kabe-`）のキャッシュだけを消す。**
-  `gigayama.github.io` は複数アプリで同一オリジンを共有しているため、
+  旧配信元の `gigayama.github.io` は複数アプリで同一オリジンを共有していた。同居する配置に戻したときのため、
   `caches.keys()` の全削除は他アプリのオフラインを壊す。
   `boot-check.js` の「なおす」と `?fix=1` も、同じ理由で自アプリ分だけを消す。
 

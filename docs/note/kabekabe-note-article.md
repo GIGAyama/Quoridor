@@ -10,7 +10,7 @@
 
 こちらから遊べます。
 
-https://gigayama.github.io/Quoridor/
+https://quoridor.giga-school.com/
 
 もとになっているのは「コリドール」という有名なボードゲームです。ただ、そのまま作ってはいません。低学年でも迷わないように、ルールを一つ減らしてあります。そのあたりの、あえてそうしなかったことも含めて書いていきます。
 
@@ -158,7 +158,7 @@ https://gigayama.github.io/Quoridor/
 
 そのため、校内のフィルタリングで許可していただくのは次の1か所だけです。
 
-- gigayama.github.io
+- quoridor.giga-school.com
 
 ここが通れば動きます。ほかに開けていただく必要はありません。
 
