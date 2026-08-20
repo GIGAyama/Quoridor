@@ -195,7 +195,7 @@ iPad には「アプリにする」ボタンが出ません。次の手順で入
 **アドレスの うしろに `?fix=1` を付けて開いてください。**
 
 ```
-https://gigayama.github.io/Quoridor/?fix=1
+https://quoridor.giga-school.com/?fix=1
 ```
 
 開くだけで、端末に残った古いデータを消して開きなおします（ボタンを押す必要は
