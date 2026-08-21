@@ -94,7 +94,7 @@ const BREAKS = [
   {
     id: 'E_PRECACHE_BUILD_ASSETS',
     file: 'public/sw.js',
-    apply: (s) => s.replace(/BUILD_ASSETS/g, 'NOTHING_AT_ALL'),
+    apply: (s) => s.replace(/__PRECACHE_URLS__/g, 'NOTHING_AT_ALL'),
   },
   {
     id: 'B1_CSP',

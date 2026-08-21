@@ -20,44 +20,31 @@
  * 【重要3】Service Worker は localStorage を一切操作しない。
  */
 const CACHE_PREFIX = 'kabe-kabe-';
-const APP_VERSION = 'v7';                       // ← リリースごとに必ず上げる
+// APP_VERSION は手で上げない。tools/build-sw.mjs がビルド後に dist/sw.js の
+// この行を、先読み対象の内容ハッシュで書き換える（原本のここは 'dev' のまま）。
+const APP_VERSION = 'dev'; /* __APP_VERSION__ */
 const CACHE_VERSION = CACHE_PREFIX + APP_VERSION;
 
 /*
- * ビルドで作られる JavaScript と CSS は、名前にハッシュが付く（index-Jjuig9u1.js など）ので
- * ここに直接は書けない。vite.config.js の precache-built-assets プラグインが
- * ビルドのあとにこの行へ実際のファイル名を埋め込む。
+ * 先読み一覧。tools/build-sw.mjs がビルド後に dist/ の実体から埋める
+ * （静的ファイルは sw-build.config.json、ビルド成果物は assets/ を列挙。
+ *   ソースマップは build-sw が対象にしない）。
  *
- * ⚠️ これを入れないと、はじめて開いた直後に圏外へ行った児童に白い画面が出る。
+ * ⚠️ ビルド成果物を入れないと、はじめて開いた直後に圏外へ行った児童に白い画面が出る。
  *    初回の読み込みでは Service Worker がまだページを管理下に置いていないため、
  *    js/css の取得が Service Worker を通らず、キャッシュに入らないためである。
  *    index.html だけキャッシュされているので「タイトルは出るが中身が出ない」形になる。
  *    実際に測るまで気づけなかった（サーバを止めて再読み込みして分かった）。
+ *    埋め忘れは build-sw.mjs 自身が検知してビルドを落とす。
  */
-const BUILD_ASSETS = [];
-
-// 相対URLで指定し、ルート直下でもサブパス配信でも正しく解決されるようにする
-const APP_SHELL = [
-  './',
-  './index.html',
-  './offline.html',
-  './manifest.webmanifest',
-  './install-hook.js',
-  './boot-check.js',
-  './favicon.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/maskable-192.png',
-  './icons/maskable-512.png',
-  './icons/apple-touch-icon.png',
-].concat(BUILD_ASSETS);
+const PRECACHE_URLS = []; /* __PRECACHE_URLS__ */
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_VERSION);
     // addAll は1本でも失敗すると全体が落ちる（＝オフラインで何も出せなくなる）ので、
     // 1本ずつ入れて、失敗したものだけ諦める。
-    await Promise.all(APP_SHELL.map((url) =>
+    await Promise.all(PRECACHE_URLS.map((url) =>
       cache.add(new Request(url, { cache: 'reload' }))
         .catch((err) => console.warn('[sw] precache skipped', url, err))));
     // ここでは skipWaiting しない。理由は冒頭【重要2】。

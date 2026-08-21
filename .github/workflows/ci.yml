@@ -85,8 +85,8 @@ jobs:
         run: |
           node -e '
             const src = require("fs").readFileSync("dist/sw.js", "utf8");
-            const m = src.match(/const BUILD_ASSETS = (\[[^\]]*\]);/);
-            if (!m) throw new Error("sw.js に BUILD_ASSETS が埋め込まれていません");
+            const m = src.match(/const PRECACHE_URLS = (\[[^\]]*\]); \/\* __PRECACHE_URLS__ \*\//);
+            if (!m) throw new Error("sw.js に先読み一覧が埋め込まれていません（build-sw が走っていない）");
             const list = JSON.parse(m[1]);
             const has = (ext) => list.some((f) => f.endsWith(ext));
             if (!has(".js") || !has(".css")) {
@@ -97,3 +97,15 @@ jobs:
             }
             console.log("先読み " + list.length + " 件: " + list.join(", "));
           '
+
+  # 正本（GIGAyama.github.io/standards/）との一致。コピーだけ直すと他リポジトリに修正が届かないため。
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: GIGAyama/GIGAyama.github.io
+          path: .standards-src
+      - name: 正本とのずれ検知
+        run: node .standards-src/standards/check-drift.mjs --standards .standards-src/standards
