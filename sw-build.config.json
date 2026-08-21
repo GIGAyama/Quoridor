@@ -1,6 +1,6 @@
 {
   "distDir": "dist",
-  "maxBytes": 2097152,
+  "maxBytes": 1048576,
   "precache": [
     "index.html",
     "offline.html",
