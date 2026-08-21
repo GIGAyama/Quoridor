@@ -244,12 +244,14 @@ export function runChecks(root, config) {
     add('E7b_SKIP_WAITING_MESSAGE', /SKIP_WAITING/.test(sw),
       /SKIP_WAITING/.test(sw) ? '' : '更新を押して切り替える受け口が無い');
 
-    add('E11_APP_VERSION', /APP_VERSION\s*=/.test(sw),
-      (sw.match(/APP_VERSION\s*=\s*'([^']+)'/) || [])[1] || 'APP_VERSION が無い');
+    // 版は手で上げず tools/build-sw.mjs がビルド後に dist/sw.js を書き換える
+    // （手動運用は 2026-08-21 に全リポジトリで上げ忘れる事故を起こした）
+    add('E11_APP_VERSION', /APP_VERSION = '[^']*'; \/\* __APP_VERSION__ \*\//.test(swRaw),
+      /APP_VERSION = '[^']*'; \/\* __APP_VERSION__ \*\//.test(swRaw) ? '自動生成' : '版が自動生成の形（__APP_VERSION__ の目印つき）になっていない');
 
     // ハッシュ付きの js/css を先読みに入れているか（圏外での初回起動）
-    add('E_PRECACHE_BUILD_ASSETS', /BUILD_ASSETS/.test(sw),
-      /BUILD_ASSETS/.test(sw) ? '' : 'ビルド成果物を先読みしていない（初回のあと圏外で白い画面になる）');
+    add('E_PRECACHE_BUILD_ASSETS', /__PRECACHE_URLS__/.test(swRaw),
+      /__PRECACHE_URLS__/.test(swRaw) ? '' : '先読み一覧の目印が無い（初回のあと圏外で白い画面になる）');
   }
 
   add('E10_OFFLINE_HTML', existsSync(join(root, 'public/offline.html'))
