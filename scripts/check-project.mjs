@@ -18,7 +18,7 @@
  * そこで、正本が置かれたらそのまま読み込んで合成できる形にしてある。
  * scripts/lib/project-quality.mjs を置けば、こちらは何も直さずに拾う。
  */
-import { readFileSync, existsSync, mkdtempSync, cpSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, cpSync, writeFileSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -27,18 +27,22 @@ import { runChecks } from './lib/giga-v5-checks.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const config = JSON.parse(readFileSync(join(ROOT, 'quality.config.json'), 'utf8'));
 
-const loadShared = async () => {
-  const p = join(ROOT, 'scripts/lib/project-quality.mjs');
-  if (!existsSync(p)) return null;
-  const mod = await import(`file://${p}`);
-  return typeof mod.runChecks === 'function' ? mod.runChecks : null;
-};
-
-const collect = async (root) => {
-  const shared = await loadShared();
-  const own = runChecks(root, config);
-  return shared ? [...shared(root, config), ...own] : own;
-};
+// かつてここに、共通の正本 scripts/lib/project-quality.mjs を「あれば足す、
+// 無ければ素通り」で読む枝があった。外した理由（2026-08-22 に実測）:
+//
+//   ・その正本は一度も取り込まれず、「まだ置かれていません」という
+//     知らせだけを出しつづけていた。含まれていた秘密の直書きの検査も
+//     働かず、src/ と public/ に Google API キーと同じ形の文字列を
+//     置いても 37/37 で緑になっていた。
+//   ・しかも取り込めば動く、というものでもなかった。この枝は
+//     mod.runChecks を探すが、艦隊にある8本のコピーはどれもその名前を
+//     export していない（6本が runQualityChecks、1本が run）。
+//     実際に置いて走らせても null のまま、やはり何も足さなかった。
+//
+// 秘密の直書きは tools/check-secrets.mjs が見る（正本 GIGAyama.github.io の
+// standards/lib/）。あちらは丸ごと1ファイルで完結し、無ければコマンドごと
+// 失敗するので、「取り込み忘れたまま緑」にはならない。
+const collect = async (root) => runChecks(root, config);
 
 /*
  * わざと壊す一覧。
@@ -237,11 +241,6 @@ const main = async () => {
     process.exit(await selfTest());
   }
   console.log(`== GIGA Standard v5 品質ゲート（${config.repoName} / ${config.appType}型）==\n`);
-  const shared = await loadShared();
-  if (!shared) {
-    console.log('ℹ️ scripts/lib/project-quality.mjs（共通検査の正本）はまだ置かれていません。');
-    console.log('   Part I の検査（giga-v5-checks.mjs）だけを走らせます。\n');
-  }
   const failed = report(await collect(ROOT));
   if (failed.length) {
     console.log('\n実ブラウザで測るもの（コントラスト・タップ領域・PWA の挙動・アイコンの画素）は');
