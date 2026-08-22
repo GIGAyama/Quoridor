@@ -1,5 +1,14 @@
 {
   "files": [
-    { "canonical": "sw/build-sw-vite.mjs", "local": "tools/build-sw.mjs" }
+    {
+      "canonical": "sw/build-sw-vite.mjs",
+      "local": "tools/build-sw.mjs"
+    }
+  ],
+  "unmanaged": [
+    {
+      "local": "scripts/lib/giga-v5-checks.mjs",
+      "reason": "360行のフォーク。検査IDの体系（A1_LICENSE 形）と quality.config.json の書式が正本と違うため、コピーし直しでは移行できない。いちばん効く「SW の版が手書きに戻っていないか」は E11_APP_VERSION が担っていて現に働く（2026-08-22、public/sw.js の版を手書きに戻すと ❌ E11_APP_VERSION が出て npm run check が exit 1 になることを確認）。ゲート本体の移行は急がない（standards/docs/gate-forks.md）"
+    }
   ]
 }
