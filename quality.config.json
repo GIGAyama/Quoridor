@@ -22,5 +22,34 @@
     "pwaScript": "tools/measure-pwa.mjs",
     "a11yScript": "tools/measure-a11y.mjs",
     "iconScript": "tools/measure-icons.mjs"
+  },
+  "standard": {
+    "//": "正本 GIGAyama.github.io/standards/lib/giga-v5-checks.mjs に渡す設定。",
+    "repoName": "Quoridor",
+    "sw": "vite",
+    "swSource": "public/sw.js",
+    "swVersionConst": "APP_VERSION",
+    "manifest": "public/manifest.webmanifest",
+    "//siteRoot": "Vite 型なので public/ の中身が配信の直下に来る。ここを書かないと offline.html とアイコンを「ありません」と誤検知する。",
+    "siteRoot": "public",
+    "jsDirs": [
+      "src"
+    ],
+    "cssDirs": [
+      "src"
+    ],
+    "htmlFiles": [
+      "index.html",
+      "public/offline.html"
+    ],
+    "imageDirs": [
+      "public"
+    ],
+    "skips": [
+      {
+        "id": "C_PAGEHIDE",
+        "reason": "このアプリは1台の端末を2人で囲んで指すもので、対局結果を保存しない（localStorage も IndexedDB も使っていない）。締めて確定する記録が無いので pagehide の出番が無い（2026-08-22）"
+      }
+    ]
   }
 }

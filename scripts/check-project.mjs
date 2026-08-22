@@ -12,17 +12,18 @@
  *
  * GIGA Standard v5 P4 は、共通の検査 scripts/lib/project-quality.mjs（正本）を
  * バイト単位でコピーし、Part I の検査を scripts/lib/giga-v5-checks.mjs に分け、
- * ここで両者を合成する形を求めている。
- *
- * このリポジトリには正本がまだ置かれていない（他リポジトリから持って来られなかった）。
- * そこで、正本が置かれたらそのまま読み込んで合成できる形にしてある。
- * scripts/lib/project-quality.mjs を置けば、こちらは何も直さずに拾う。
+ * 構成:
+ *   scripts/lib/giga-v5-checks.mjs … 共通の検査の【正本】。
+ *     GIGAyama.github.io/standards/lib/ からのコピーで、ここでは手を入れない。
+ *     直すときは正本を直してから配る（drift ジョブがずれを見張っている）。
+ *   scripts/lib/local-checks.mjs   … このリポジトリだけの検査。
  */
 import { readFileSync, mkdtempSync, cpSync, writeFileSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { runChecks } from './lib/giga-v5-checks.mjs';
+import { runGigaChecks } from './lib/giga-v5-checks.mjs';
+import { runLocalChecks, runBuildChecks } from './lib/local-checks.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const config = JSON.parse(readFileSync(join(ROOT, 'quality.config.json'), 'utf8'));
@@ -42,7 +43,19 @@ const config = JSON.parse(readFileSync(join(ROOT, 'quality.config.json'), 'utf8'
 // 秘密の直書きは tools/check-secrets.mjs が見る（正本 GIGAyama.github.io の
 // standards/lib/）。あちらは丸ごと1ファイルで完結し、無ければコマンドごと
 // 失敗するので、「取り込み忘れたまま緑」にはならない。
-const collect = async (root) => runChecks(root, config);
+// 正本は { id, title, ok, detail(配列), skipped } を返す。ローカルは
+// { id, ok, detail(文字列), severity }。出力をそろえてから並べる。
+const collect = async (root) => [
+  ...runGigaChecks(root, config.standard).map((r) => ({
+    id: r.id,
+    ok: r.ok,
+    skipped: !!r.skipped,
+    detail: r.skipped ? r.skipped : (r.detail || []).join(' / ') || r.title,
+    severity: 'P1',
+  })),
+  ...runLocalChecks(root).map((r) => ({ ...r, skipped: false })),
+  ...runBuildChecks(root, config).map((r) => ({ ...r, skipped: false })),
+];
 
 /*
  * わざと壊す一覧。
@@ -51,38 +64,44 @@ const collect = async (root) => runChecks(root, config);
  */
 const BREAKS = [
   {
-    id: 'F4_RT_COLOR',
+    id: 'D_RT_COLOR',
     file: 'src/styles.css',
     apply: (s) => s.replace('ruby rt {\n  color: inherit;\n}', 'rt {\n  color: #666;\n}'),
   },
   {
-    id: 'D2_DVH',
+    id: 'D_DVH',
     file: 'src/styles.css',
-    apply: (s) => s.replace('.app-shell {\n  min-height: 100dvh;', '.app-shell {\n  min-height: 100vh;'),
+    // ⚠️ 正本は「前後250文字に 100dvh があれば、古いブラウザ向けの正しい
+    //    ひかえ」と見る。100dvh を 100vh に書き替えるだけでは、すぐ下の
+    //    @supports not (height: 100dvh) が近くにあるため落ちない。
+    //    この判定は「100vh のあと 100dvh で上書き」という正しい書き方を
+    //    通すためのもので、そこを狭めると誤検知が増える。
+    //    壊し方のほうを、ひかえの無い 100vh を離れた場所に足す形にする。
+    apply: (s) => s + '\n.__selftest { height: 100vh; }\n',
   },
   {
-    id: 'D11_FORCED_COLORS',
+    id: 'D_FORCED_COLORS',
     file: 'src/styles.css',
     apply: (s) => s.replace('@media (forced-colors: active)', '@media (forced-colors: none-of-it)'),
   },
   {
-    id: 'D10_REDUCED_MOTION',
+    id: 'D_REDUCED_MOTION',
     file: 'src/styles.css',
     apply: (s) => s.replace(/animation-duration: 0\.01ms !important;/, 'animation-duration: 0s !important;'),
   },
   {
-    id: 'D4_FLUID_TYPE',
+    id: 'D_FLUID_TYPE',
     file: 'src/styles.css',
     apply: (s) => s.replace(/clamp\([^)]*\)/g, '18px'),
   },
   {
-    id: 'E7_NO_SKIP_WAITING_IN_INSTALL',
+    id: 'E_SW_NO_SKIP_WAITING_ON_INSTALL',
     file: 'public/sw.js',
     apply: (s) => s.replace('    // ここでは skipWaiting しない。理由は冒頭【重要2】。',
       '    await self.skipWaiting();'),
   },
   {
-    id: 'E5_SW_CACHE_SCOPE',
+    id: 'E_SW_CACHE_SCOPE',
     file: 'public/sw.js',
     // 「消す式」ではなく「startsWith で絞る式」を見ているかの確認。
     // filter を外して全消しにすると落ちなければならない。
@@ -91,7 +110,7 @@ const BREAKS = [
       "      .filter((key) => key !== CACHE_VERSION)\n"),
   },
   {
-    id: 'E6_SW_NO_LOCALSTORAGE',
+    id: 'E_SW_NO_LOCALSTORAGE',
     file: 'public/sw.js',
     apply: (s) => s.replace("self.addEventListener('message'", "localStorage.getItem('x');\nself.addEventListener('message'"),
   },
@@ -101,83 +120,84 @@ const BREAKS = [
     apply: (s) => s.replace(/__PRECACHE_URLS__/g, 'NOTHING_AT_ALL'),
   },
   {
-    id: 'B1_CSP',
+    id: 'B_CSP',
     file: 'index.html',
     apply: (s) => s.replace('http-equiv="Content-Security-Policy"', 'http-equiv="X-Nothing"'),
   },
   {
-    id: 'B1b_CSP_NO_UNSAFE_INLINE_SCRIPT',
+    id: 'B_CSP',
     file: 'index.html',
     apply: (s) => s.replace("script-src 'self';", "script-src 'self' 'unsafe-inline';"),
   },
   {
-    id: 'B1c_CSP_NO_FRAME_ANCESTORS',
+    id: 'B_CSP',
     file: 'index.html',
     apply: (s) => s.replace("object-src 'none';", "object-src 'none'; frame-ancestors 'none';"),
   },
   {
-    id: 'D14_NO_ZOOM_LOCK',
+    id: 'D_VIEWPORT',
     file: 'index.html',
     apply: (s) => s.replace('initial-scale=1, viewport-fit=cover', 'initial-scale=1, user-scalable=no'),
   },
   {
-    id: 'D1_VIEWPORT_COVER',
+    id: 'D_VIEWPORT',
     file: 'index.html',
     apply: (s) => s.replace(', viewport-fit=cover', ''),
   },
   {
-    id: 'E3b_INSTALL_HOOK_FIRST',
+    id: 'E_INSTALL_HOOK',
     file: 'index.html',
     apply: (s) => s.replace('<script src="/install-hook.js"></script>', ''),
   },
   {
-    id: 'E1_MANIFEST_PATHS',
+    id: 'E_MANIFEST_ID',
     file: 'public/manifest.webmanifest',
     // "./" は独自ドメインでの正しい値なので、もう壊れた形ではない。
     // いまの壊れ方は、サブドメイン直下で配信するのにリポジトリ名の絶対パスが残っていること。
     apply: (s) => s.replace('"start_url": "./"', '"start_url": "/Quoridor/"'),
   },
   {
-    id: 'B6_NO_CDN_EXEC',
+    id: 'B_NO_CDN_CODE',
     file: 'index.html',
     apply: (s) => s.replace('</head>', '  <script src="https://cdn.tailwindcss.com"></script>\n  </head>'),
   },
   {
-    id: 'C5_NO_LOCALSTORAGE_CLEAR',
+    id: 'C_NO_LS_CLEAR',
     file: 'src/pwa.js',
     apply: (s) => `${s}\nexport const wipe = () => localStorage.clear();\n`,
   },
   {
-    id: 'B4_NO_POSTMESSAGE_STAR',
+    id: 'C_NO_POSTMESSAGE_STAR',
     file: 'src/pwa.js',
     apply: (s) => `${s}\nexport const shout = (w) => w.postMessage({ a: 1 }, '*');\n`,
   },
   {
-    id: 'A1_LICENSE',
+    id: 'A_LICENSE',
     file: 'LICENSE',
     remove: true,
   },
   {
-    id: 'A3_DEPENDABOT',
+    id: 'A_DEPENDABOT',
     file: '.github/dependabot.yml',
     remove: true,
   },
   {
-    id: 'E10_OFFLINE_HTML',
+    id: 'E_OFFLINE_HTML',
     file: 'public/offline.html',
     remove: true,
   },
   {
-    id: 'E10b_OFFLINE_SELF_CONTAINED',
+    id: 'E_OFFLINE_HTML',
     file: 'public/offline.html',
     apply: (s) => s.replace('</body>', '  <script>console.log(1)</script>\n  </body>'),
   },
 ];
 
 const report = (results) => {
-  const failed = results.filter((r) => !r.ok);
+  const failed = results.filter((r) => !r.ok && !r.skipped);
   for (const r of results) {
-    console.log(`${r.ok ? '✅' : '❌'} [${r.severity}] ${r.id.padEnd(34)} ${r.detail}`);
+    const mark = r.skipped ? '－' : r.ok ? '✅' : '❌';
+    console.log(`${mark} [${r.severity}] ${r.id.padEnd(34)} ${r.detail}`);
   }
   console.log(`\n${results.length - failed.length} / ${results.length} 件が基準を満たしています。`);
   return failed;
@@ -188,7 +208,7 @@ const selfTest = async () => {
   console.log('ファイルをわざと壊した写しを作り、対応する検査が落ちることを確かめます。\n');
 
   const base = await collect(ROOT);
-  const baseFailed = base.filter((r) => !r.ok);
+  const baseFailed = base.filter((r) => !r.ok && !r.skipped);
   if (baseFailed.length) {
     console.log('⚠️ もとの状態で落ちている検査があります。先にそちらを直してください。');
     for (const r of baseFailed) console.log(`   ❌ ${r.id} ${r.detail}`);
