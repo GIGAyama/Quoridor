@@ -73,5 +73,24 @@ export function runBuildChecks(root, config) {
   add('F5_INITIAL_JS', kb(total) <= config.limits.maxInitialJsKB,
     `${kb(total)}KB (上限 ${config.limits.maxInitialJsKB}KB)`);
 
+  /*
+   * 素の HTML の入口（プライバシーポリシー・利用規約）が配信物に入っているか。
+   *
+   * この2枚はリポジトリ直下に置いてあり、置いてあるだけでは配られない。
+   * Vite は vite.config.js の入口一覧に並べたものしか dist に出さないので、
+   * 並べ忘れると、リポジトリには在るのに本番だけ 404 になる——
+   * 手元では気づけず、外から見た人だけが踏む形になる（2026-08-23 に発生）。
+   * 規約とポリシーは公開していること自体が要件なので、名指しで見る。
+   */
+  const POLICY_PAGES = ['privacy.html', 'terms.html'];
+  const missing = POLICY_PAGES
+    .filter((name) => existsSync(join(root, name)))     // 原文が在るものだけを見る
+    .filter((name) => !existsSync(join(dist, name)));
+  add('F_POLICY_PAGES_SHIPPED', missing.length === 0,
+    missing.length === 0
+      ? POLICY_PAGES.join(' / ')
+      : `${missing.join(' / ')} が dist に無い（本番で 404 になる）`,
+    'P1');
+
   return out;
 }
