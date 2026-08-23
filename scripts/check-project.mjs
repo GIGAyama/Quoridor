@@ -50,7 +50,9 @@ const collect = async (root) => [
     id: r.id,
     ok: r.ok,
     skipped: !!r.skipped,
-    detail: r.skipped ? r.skipped : (r.detail || []).join(' / ') || r.title,
+    // 正本は skipped を true/false で返し、理由は title の末尾に付ける。
+    // r.skipped をそのまま出すと「true」と表示され、理由が読めない。
+    detail: r.skipped ? r.title : (r.detail || []).join(' / ') || r.title,
     severity: 'P1',
   })),
   ...runLocalChecks(root).map((r) => ({ ...r, skipped: false })),
