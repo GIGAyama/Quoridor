@@ -4,7 +4,11 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['dist', 'node_modules'] },
+  /* ⚠️ .claude/skills/ は正本（GIGAyama.github.io/standards/skills/）の写しで、
+     このアプリのコードではない。中身は Node で動く道具（process / console /
+     Buffer を使う）なので、ブラウザ向けのこの設定に当てると no-undef で落ちる。
+     直せるのは正本の側だけなので、ここでは見ない。ずれは check-drift が見ている。 */
+  { ignores: ['dist', 'node_modules', '.claude/**'] },
   js.configs.recommended,
   {
     files: ['**/*.{js,jsx}'],
