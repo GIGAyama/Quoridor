@@ -8,7 +8,7 @@ export default [
      このアプリのコードではない。中身は Node で動く道具（process / console /
      Buffer を使う）なので、ブラウザ向けのこの設定に当てると no-undef で落ちる。
      直せるのは正本の側だけなので、ここでは見ない。ずれは check-drift が見ている。 */
-  { ignores: ['dist', 'node_modules', '.claude/**'] },
+  { ignores: ['dist', 'node_modules', '.claude/**', '.agents/**'] },
   js.configs.recommended,
   {
     files: ['**/*.{js,jsx}'],
