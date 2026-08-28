@@ -35,6 +35,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      # ⚠️ package.json の check に並べた検査は、ここにも並べること。
+      #    check = lint && test && check-secrets && build && gate && measure
+      #    のうち check-secrets だけが CI に写されておらず、
+      #    鍵やシート ID の直書きを見る検査が一度も動いていなかった。
+      - name: 秘密の直書きがないか
+        run: npm run check:secrets
+
       - name: 品質ゲート（GIGA Standard v5 Part I の静的検査）
         run: npm run gate
 
