@@ -1059,7 +1059,7 @@ export default function App() {
             ⚠️ data-links で「つかいかた」を外してある。このアプリにはまだ
                docs/manual/ が無く、既定のまま出すと行き止まりのリンクになる。
                マニュアルを書いたら、この属性ごと消すこと。 */}
-        <div data-giga-links data-links="terms,privacy" />
+        <span data-giga-links data-links="terms,privacy" />
       </footer>
 
       {screen === 'game' && !winner && (
