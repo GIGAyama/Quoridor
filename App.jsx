@@ -1051,7 +1051,15 @@ export default function App() {
 
       {/* フッター */}
       <footer className="text-center text-gray-600 py-3 mt-auto border-t border-yellow-300/50 bg-white/40 backdrop-blur-sm">
-        <small>© 2026 カベカベ<R t="合戦" r="がっせん"/>！ <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="tap-44 no-underline text-gray-600 hover:text-gray-800 transition-colors">GIGA山</a>{' '}<a href="https://giga-school.com/apps/quoridor/" target="_blank" rel="noopener noreferrer" className="tap-44 no-underline text-gray-600 hover:text-gray-800 transition-colors">使い方を読む</a></small>
+        <small>© 2026 カベカベ<R t="合戦" r="がっせん"/>！ <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="tap-44 no-underline text-gray-600 hover:text-gray-800 transition-colors">GIGA山</a></small>
+        {/* ⚠️ 行き先のリンクを手で書かないこと。中身は正本の部品
+            standards/web/giga-app-links.js（配布物 public/giga-app-links.js）が
+            この中に出す。文言も並びも行き先も、あちらで決まっている。
+
+            ⚠️ data-links で「つかいかた」を外してある。このアプリにはまだ
+               docs/manual/ が無く、既定のまま出すと行き止まりのリンクになる。
+               マニュアルを書いたら、この属性ごと消すこと。 */}
+        <div data-giga-links data-links="terms,privacy" />
       </footer>
 
       {screen === 'game' && !winner && (
